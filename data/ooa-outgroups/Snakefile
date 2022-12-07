@@ -1,0 +1,184 @@
+import os
+import tskit
+from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
+
+HTTP = HTTPRemoteProvider()
+
+POPULATIONS = ["YRI", "CHB", "CEU", "gorilla", "orangutan", "chimpanzee"]
+SAMPLESIZES = [3, 3, 4, 1, 1, 1]
+SAMPLECONFIG = dict(zip(POPULATIONS, SAMPLESIZES))
+SAMPLENAMES = list(
+    map(lambda t:
+        list(
+            map(lambda tt:
+                f"{tt[1]}-{tt[0]+1}", enumerate([t[0]] * t[1])
+                )
+        ),
+        zip(POPULATIONS, SAMPLESIZES))
+)
+SAMPLENAMES = [x for y in SAMPLENAMES for x in y]
+
+LENGTH = 2e6
+RHO = 1.44e-08
+MU = 2.35e-08
+
+wildcard_constraints:
+    chromosome = "(chr21|chr22)",
+    dataset = "ooa",
+    sample = f"({'|'.join(SAMPLENAMES)})",
+    haplotype = "(1|2)",
+
+rule all:
+    input: expand("{sample}.{dataset}.{chromosome}.fasta", \
+                  sample=SAMPLENAMES, \
+                  dataset=["ooa"], chromosome=["chr21"])
+
+
+rule simulate_ancestry:
+    """Simulate ancestry"""
+    output: temp("ooa.anc.ts"),
+    input:
+        yaml = "ooa_with_outgroups.demes.yaml",
+    params:
+        pops = " ".join(map(lambda t: f"{t[0]}:{t[1]}", SAMPLECONFIG.items())),
+        length = LENGTH,
+        rho = RHO,
+        seed = 42,
+    threads: 1
+    shell:
+        "msp ancestry -s {params.seed} --demography {input.yaml} --length {params.length} --recombination-rate {params.rho} {params.pops} > {output}"
+
+
+rule mutate_ts:
+    """Mutate tree sequence"""
+    output: "{dataset}.ts",
+    input: "{dataset}.anc.ts",
+    params:
+        seed = 42,
+        mu = MU,
+    threads: 1
+    shell:
+        "msp mutations -s {params.seed} {params.mu} {input} -o {output}"
+
+
+rule ts2vcf:
+    """Convert ts to vcf. Add additional information to sample names."""
+    output:
+        vcf = temp("{dataset}.{chromosome}.msp.vcf"),
+    input:
+        ts = "{dataset}.ts",
+        html = "{dataset}.ts.pca.html"
+    run:
+        ts = tskit.load(input.ts)
+        with open(output.vcf, "w") as fh:
+            ts.write_vcf(fh, individual_names=SAMPLENAMES)
+
+
+rule compress_tsvcf:
+    output:
+        vcf = temp("{dataset}.{chromosome}.msp.vcf.gz")
+    input:
+        vcf = "{dataset}.{chromosome}.msp.vcf"
+    shell:
+        "cat {input.vcf} | bcftools view -o {output.vcf} -O z"
+
+
+rule polarizevcf:
+    """Polarize vcf using pgtk"""
+    output:
+        vcf = "{dataset}.{chromosome}.vcf.gz",
+    input:
+        vcf = "{dataset}.{chromosome}.msp.vcf.gz",
+        tbi = "{dataset}.{chromosome}.msp.vcf.gz.tbi",
+    shell:
+        "pgtk-vcf-polarize --reference-id CEU-4 {input.vcf} - | bcftools view -o {output.vcf} -O z;"
+
+
+rule makeref:
+    """Make reference sequence from polarized vcf"""
+    output:
+        fa = "{dataset}.{chromosome}.ref.fa"
+    input:
+        vcf = "{dataset}.{chromosome}.vcf.gz",
+        tbi = "{dataset}.{chromosome}.vcf.gz.tbi",
+    shell:
+        "pgtk-vcf-makeref {input.vcf} -o {output.fa}"
+
+
+rule bcftools_consensus:
+    """Apply variants to reference sequence"""
+    output:
+        fa = temp("{sample}-{haplotype}.{dataset}.{chromosome}.fasta"),
+    input:
+        vcf = "{dataset}.{chromosome}.vcf.gz",
+        ref = "{dataset}.{chromosome}.ref.fa",
+    shell:
+        "bcftools consensus {input.vcf} -f {input.ref} -s {wildcards.sample} -H {wildcards.haplotype} -o {output.fa}"
+
+
+rule combine_haplotypes:
+    """Combine haplotypes"""
+    output:
+        fa = "{sample}.{dataset}.{chromosome}.fasta"
+    input:
+        hap1 = "{sample}-1.{dataset}.{chromosome}.fasta",
+        hap2 = "{sample}-2.{dataset}.{chromosome}.fasta",
+    shell:
+        "cat {input.hap1} {input.hap2} > {output.fa}"
+
+
+
+rule ucsc_hg38:
+    output:
+        "hg38.2bit"
+    input:
+        HTTP.remote("http://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.2bit", keep_local=True)
+
+
+# FIXME: divide genomes into three regions: normal coverage, repeat
+# coverage (maybe multiple), low coverage. Simulate reads separately
+# for each case is the only way to go. Make list of target coverages
+# and calculate required number of reads from this
+rule simulate_reads:
+    """Simulate reads with iss"""
+    output:
+        R1 = "{sample}.{dataset}.{chromosome}_R1.fastq.gz",
+        R2 = "{sample}.{dataset}.{chromosome}_R2.fastq.gz",
+    params:
+        nreads = 100
+    input:
+        fasta = "{sample}.{dataset}.{chromosome}.fasta"
+    shell:
+        "iss generate --output {wildcards.sample}.{wildcards.dataset}.{wildcards.chromosome} -z --genomes {input.fasta} --model HiSeq -n {params.nreads}"
+
+
+
+rule tabix:
+    output:
+        "{prefix}.vcf.gz.tbi"
+    input:
+        "{prefix}.vcf.gz"
+    shell:
+        "tabix {input}"
+
+# Quality control
+rule pca_ts:
+    output:
+        html = "{prefix}.ts.pca.html"
+    input:
+        ts = "{prefix}.ts",
+        yaml = "bokeh.yaml",
+    shell:
+        "pgtk tskit pca {input.ts} --bokeh-theme-file {input.yaml} -o {output.html} --components 10"
+
+
+rule pca_vcf:
+    output:
+        html = "{prefix}.vcf.gz.pca.html"
+    input:
+        vcf = "{prefix}.vcf.gz",
+        tbi = "{prefix}.vcf.gz.tbi",
+        md = "metadata.txt",
+        yaml = "bokeh.yaml"
+    shell:
+        "pgtk vcf pca {input.vcf} {input.md} --force --bokeh-theme-file {input.yaml} -o {output.html} --components 10"
