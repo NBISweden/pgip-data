@@ -519,7 +519,7 @@ def make_ooa_with_outgroups(args):
     model = DemesModel(
         name="ooa",
         path=pathlib.Path("ooa-outgroups"),
-        demesfile="ooa-outgroups/ooa_with_outgroup.demes.yaml",
+        demesfile="ooa-outgroups/ooa_with_outgroups.demes.yaml",
     )
     popdict = {
         "CHB": 3,

@@ -1,0 +1,14 @@
+sample	population
+YRI-1	YRI
+YRI-2	YRI
+YRI-3	YRI
+CHB-1	CHB
+CHB-2	CHB
+CHB-3	CHB
+CEU-1	CEU
+CEU-2	CEU
+CEU-3	CEU
+CEU-4	CEU
+gorilla-1	gorilla
+orangutan-1	orangutan
+chimpanzee-1	chimpanzee

@@ -1,0 +1,15 @@
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bedops
+  - bedtools
+  - bwa
+  - csvtk
+  - gatk4
+  - msprime>=1.0
+  - plink
+  - samtools
+  - seqkit
+  - tskit
