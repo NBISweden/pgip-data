@@ -1,7 +1,5 @@
 cyvcf2
 joblib
 insilicoseq
-biopython=1.78
-bwa
-samtools
-gatk4
+biopython == 1.78
+pgtk @ git+https://github.com/percyfal/pgtk@pyproject

@@ -1,5 +1,6 @@
 import os
 import tskit
+import numpy as np
 from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
 
 HTTP = HTTPRemoteProvider()
@@ -8,177 +9,474 @@ POPULATIONS = ["YRI", "CHB", "CEU", "gorilla", "orangutan", "chimpanzee"]
 SAMPLESIZES = [3, 3, 4, 1, 1, 1]
 SAMPLECONFIG = dict(zip(POPULATIONS, SAMPLESIZES))
 SAMPLENAMES = list(
-    map(lambda t:
-        list(
-            map(lambda tt:
-                f"{tt[1]}-{tt[0]+1}", enumerate([t[0]] * t[1])
-                )
-        ),
-        zip(POPULATIONS, SAMPLESIZES))
+    map(
+        lambda t: list(map(lambda tt: f"{tt[1]}-{tt[0]+1}", enumerate([t[0]] * t[1]))),
+        zip(POPULATIONS, SAMPLESIZES),
+    )
 )
 SAMPLENAMES = [x for y in SAMPLENAMES for x in y]
+REFERENCE_ID = "CEU-4"
 
-LENGTH = 2e6
+LENGTH = {"chr21": 2e6}
+START = {
+    "chr21": 24_100_001,
+}
+END = {
+    "chr21": START["chr21"] + LENGTH["chr21"],
+}
+# Repeat coordinates translated to simulation coordinates: 1 - LENGTH
+REPEATS = {
+    "chr21": [(800_000, 900_000), (1_300_000, 1_400_000)],
+}
+COVERAGE = {"chr21": (15, 5)}
+
+SIMTYPE = {
+    "chr21": {
+        "hc": (1, 1_000_000),
+        "lc": (1_000_001, 2_000_000),
+        "repeat_hc": (800_000, 900_000),
+        "repeat_lc": (1_300_000, 1_400_000),
+    },
+}
+np.random.seed(2232)
+SIMDEPTH = {
+    "chr21": {
+        "hc": dict(
+            zip(
+                SAMPLENAMES,
+                np.clip(np.random.normal(10, 2, size=len(SAMPLENAMES)), 6.0, 15.0),
+            )
+        ),
+        "lc": dict(
+            zip(
+                SAMPLENAMES,
+                np.clip(np.random.normal(4, 1, size=len(SAMPLENAMES)), 3.0, 7.0),
+            )
+        ),
+        "repeat_hc": dict(
+            zip(
+                SAMPLENAMES,
+                np.clip(np.random.normal(20, 4, size=len(SAMPLENAMES)), 12.0, 40.0),
+            )
+        ),
+        "repeat_lc": dict(
+            zip(
+                SAMPLENAMES,
+                np.clip(np.random.normal(8, 2, size=len(SAMPLENAMES)), 6.0, 18.0),
+            )
+        ),
+    }
+}
+# Multiply reference id depth by 2
+for k, v in SIMDEPTH.items():
+    for kk, vv in v.items():
+        SIMDEPTH[k][kk][REFERENCE_ID] = SIMDEPTH[k][kk][REFERENCE_ID] * 2
+
+READ_LENGTH = 125
+
 RHO = 1.44e-08
 MU = 2.35e-08
 
+
 wildcard_constraints:
-    chromosome = "(chr21|chr22)",
-    dataset = "ooa",
-    sample = f"({'|'.join(SAMPLENAMES)})",
-    haplotype = "(1|2)",
+    chromosome="(chr21|chr22)",
+    dataset="ooa",
+    sample=f"({'|'.join(SAMPLENAMES)})",
+    simtype="(hc|lc|repeat_hc|repeat_lc)",
+    window_size="[0-9]+",
+    haplotype="(1|2)",
+
+
+ALL = (
+    expand(
+        "{dataset}.{chromosome}.gatk.vcf.gz.tbi", dataset=["ooa"], chromosome=["chr21"]
+    )
+    + expand(
+        "{dataset}.{chromosome}.gatk.vcf.gz.pca.html",
+        dataset=["ooa"],
+        chromosome=["chr21"],
+    )
+    + ["rulegraph.png"]
+)
+
 
 rule all:
-    input: expand("{sample}.{dataset}.{chromosome}.fasta", \
-                  sample=SAMPLENAMES, \
-                  dataset=["ooa"], chromosome=["chr21"])
-
-
-rule simulate_ancestry:
-    """Simulate ancestry"""
-    output: temp("ooa.anc.ts"),
     input:
-        yaml = "ooa_with_outgroups.demes.yaml",
+        ALL,
+
+
+rule graph:
+    output:
+        "{graph}.png",
+    input:
+        "Snakefile",
+    shell:
+        "snakemake --{wildcards.graph} | dot -T png > {output}"
+
+
+rule tskit_simulate_ancestry:
+    """Simulate ancestry"""
+    output:
+        temp("ooa.anc.{chromosome}.ts"),
+    input:
+        yaml="ooa_with_outgroups.demes.yaml",
     params:
-        pops = " ".join(map(lambda t: f"{t[0]}:{t[1]}", SAMPLECONFIG.items())),
-        length = LENGTH,
-        rho = RHO,
-        seed = 42,
+        pops=" ".join(map(lambda t: f"{t[0]}:{t[1]}", SAMPLECONFIG.items())),
+        length=lambda wildcards: LENGTH[wildcards.chromosome],
+        rho=RHO,
+        seed=42,
     threads: 1
     shell:
         "msp ancestry -s {params.seed} --demography {input.yaml} --length {params.length} --recombination-rate {params.rho} {params.pops} > {output}"
 
 
-rule mutate_ts:
+rule tskit_mutate_ts:
     """Mutate tree sequence"""
-    output: "{dataset}.ts",
-    input: "{dataset}.anc.ts",
+    output:
+        "{dataset}.{chromosome}.ts",
+    input:
+        "{dataset}.anc.{chromosome}.ts",
     params:
-        seed = 42,
-        mu = MU,
+        seed=42,
+        mu=MU,
     threads: 1
     shell:
         "msp mutations -s {params.seed} {params.mu} {input} -o {output}"
 
 
-rule ts2vcf:
+rule tskit_ts2vcf:
     """Convert ts to vcf. Add additional information to sample names."""
     output:
-        vcf = temp("{dataset}.{chromosome}.msp.vcf"),
+        vcf=temp("{dataset}.{chromosome}.msp.vcf"),
     input:
-        ts = "{dataset}.ts",
-        html = "{dataset}.ts.pca.html"
+        ts="{dataset}.{chromosome}.ts",
+        html="{dataset}.{chromosome}.ts.pca.html",
     run:
         ts = tskit.load(input.ts)
         with open(output.vcf, "w") as fh:
             ts.write_vcf(fh, individual_names=SAMPLENAMES)
 
 
-rule compress_tsvcf:
+rule bcftools_compress_tsvcf:
     output:
-        vcf = temp("{dataset}.{chromosome}.msp.vcf.gz")
+        vcf=temp("{dataset}.{chromosome}.msp.vcf.gz"),
     input:
-        vcf = "{dataset}.{chromosome}.msp.vcf"
+        vcf="{dataset}.{chromosome}.msp.vcf",
     shell:
         "cat {input.vcf} | bcftools view -o {output.vcf} -O z"
 
 
-rule polarizevcf:
+rule pgtk_polarizevcf:
     """Polarize vcf using pgtk"""
     output:
-        vcf = "{dataset}.{chromosome}.vcf.gz",
+        vcf="{dataset}.{chromosome}.vcf.gz",
     input:
-        vcf = "{dataset}.{chromosome}.msp.vcf.gz",
-        tbi = "{dataset}.{chromosome}.msp.vcf.gz.tbi",
+        vcf="{dataset}.{chromosome}.msp.vcf.gz",
+        tbi="{dataset}.{chromosome}.msp.vcf.gz.tbi",
+    params:
+        reference_id=REFERENCE_ID,
     shell:
-        "pgtk-vcf-polarize --reference-id CEU-4 {input.vcf} - | bcftools view -o {output.vcf} -O z;"
+        "pgtk-vcf-polarize --reference-id {params.reference_id} {input.vcf} - | bcftools view -o {output.vcf} -O z;"
 
 
-rule makeref:
+rule pgtk_makeref:
     """Make reference sequence from polarized vcf"""
     output:
-        fa = "{dataset}.{chromosome}.ref.fa"
+        fa="{dataset}.{chromosome}.ref.fa",
     input:
-        vcf = "{dataset}.{chromosome}.vcf.gz",
-        tbi = "{dataset}.{chromosome}.vcf.gz.tbi",
+        vcf="{dataset}.{chromosome}.vcf.gz",
+        tbi="{dataset}.{chromosome}.vcf.gz.tbi",
+        html="{dataset}.{chromosome}.pca.html",
+        fasta=lambda wildcards: "".join(
+            [
+                wildcards.chromosome,
+                ".",
+                str(int(START[wildcards.chromosome])),
+                "-",
+                str(int(END[wildcards.chromosome])),
+                ".fasta",
+            ]
+        ),
     shell:
-        "pgtk-vcf-makeref {input.vcf} -o {output.fa}"
+        "pgtk-vcf-makeref {input.vcf} -o {output.fa} -f {input.fasta}"
 
 
 rule bcftools_consensus:
     """Apply variants to reference sequence"""
     output:
-        fa = temp("{sample}-{haplotype}.{dataset}.{chromosome}.fasta"),
+        fa=temp("{sample}-{haplotype}.{dataset}.{chromosome}.fasta"),
     input:
-        vcf = "{dataset}.{chromosome}.vcf.gz",
-        ref = "{dataset}.{chromosome}.ref.fa",
+        vcf="{dataset}.{chromosome}.vcf.gz",
+        ref="{dataset}.{chromosome}.ref.fa",
     shell:
-        "bcftools consensus {input.vcf} -f {input.ref} -s {wildcards.sample} -H {wildcards.haplotype} -o {output.fa}"
+        "bcftools consensus {input.vcf} -f {input.ref} -s {wildcards.sample} -H {wildcards.haplotype} -p {wildcards.chromosome}-{wildcards.haplotype}- | sed -e s/-1// > {output.fa}"
 
 
-rule combine_haplotypes:
+rule cat_combine_haplotypes:
     """Combine haplotypes"""
     output:
-        fa = "{sample}.{dataset}.{chromosome}.fasta"
+        fa="{sample}.{dataset}.{chromosome}.fasta",
     input:
-        hap1 = "{sample}-1.{dataset}.{chromosome}.fasta",
-        hap2 = "{sample}-2.{dataset}.{chromosome}.fasta",
+        hap1="{sample}-1.{dataset}.{chromosome}.fasta",
+        hap2="{sample}-2.{dataset}.{chromosome}.fasta",
     shell:
         "cat {input.hap1} {input.hap2} > {output.fa}"
 
 
-
-rule ucsc_hg38:
+rule seqkit_subseq_for_simulation:
+    """Generate subsequences for simulation"""
     output:
-        "hg38.2bit"
+        fa=temp("{sample}.{dataset}.{chromosome}.{simtype}.fasta"),
     input:
-        HTTP.remote("http://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.2bit", keep_local=True)
+        fa="{sample}.{dataset}.{chromosome}.fasta",
+    params:
+        region=lambda wildcards: ":".join(
+            [str(x) for x in SIMTYPE[wildcards.chromosome][wildcards.simtype]]
+        ),
+    shell:
+        'seqkit subseq {input.fa} -r {params.region} | seqkit replace -p "(-[1-2])" -r "-{wildcards.simtype}\\$1" > {output.fa}'
 
 
-# FIXME: divide genomes into three regions: normal coverage, repeat
-# coverage (maybe multiple), low coverage. Simulate reads separately
-# for each case is the only way to go. Make list of target coverages
-# and calculate required number of reads from this
-rule simulate_reads:
+rule ucsc_hs1:
+    output:
+        "hs1.2bit",
+    input:
+        HTTP.remote(
+            "https://hgdownload.soe.ucsc.edu/goldenPath/hs1/bigZips/hs1.2bit",
+            keep_local=True,
+        ),
+    shell:
+        "mv hgdownload.soe.ucsc.edu/goldenPath/hs1/bigZips/hs1.2bit ."
+
+
+rule ucsc_repeatmasker:
+    output:
+        "hs1.repeatMasker.out.gz",
+    input:
+        HTTP.remote(
+            "https://hgdownload.soe.ucsc.edu/goldenPath/hs1/bigZips/hs1.repeatMasker.out.gz",
+            keep_local=True,
+        ),
+    shell:
+        "mv hgdownload.soe.ucsc.edu/goldenPath/hs1/bigZips/hs1.repeatMasker.out.gz ."
+
+
+rule ucsc_chromsizes:
+    output:
+        "hs1.chrom.sizes.txt",
+    input:
+        HTTP.remote(
+            "https://hgdownload.soe.ucsc.edu/goldenPath/hs1/bigZips/hs1.chrom.sizes.txt"
+        ),
+    shell:
+        "mv hgdownload.soe.ucsc.edu/goldenPath/hs1/bigZips/hs1.chrom.sizes.txt ."
+
+
+rule ucsc_chromsizes_window:
+    """Make windows bed file from genome sizes"""
+    output:
+        "hs1.{window_size}.bed",
+    input:
+        "hs1.chrom.sizes.txt",
+    shell:
+        "bedtools makewindows -g {input} -w {wildcards.window_size} > {output}"
+
+
+rule bedops_rmsk2bed:
+    """Convert repeatmasker.out output to bed using bedops"""
+    output:
+        "hs1.repeatMasker.bed",
+    input:
+        "hs1.repeatMasker.out.gz",
+    shell:
+        "zcat {input} | rmsk2bed - > {output}"
+
+
+rule bedtools_repeat_coverage_in_windows:
+    """Calculate fraction of windows covered by repeat"""
+    output:
+        "hs1.repeatMasker.coverage.{window_size}.bed",
+    input:
+        a="hs1.{window_size}.bed",
+        b="hs1.repeatMasker.bed",
+    shell:
+        "bedtools coverage -a {input.a} -b {input.b} > {output}"
+
+
+rule cvstk_plot_repeat_coverage_in_windows_on_chromosome:
+    """Plot repeat coverage in windows on a chromosome"""
+    output:
+        "hs1.repeatMasker.coverage.{chromosome}.{window_size}.png",
+    input:
+        "hs1.repeatMasker.coverage.{window_size}.bed",
+    params:
+        title=lambda wildcards: f'--title "Repeat coverage, chromosome {wildcards.chromosome}, window size {wildcards.window_size}"',
+        config='--height 10.0 --width 20.0 -x 2 -y 7 --xlab "Position (bp)" --ylab "Coverage"',
+    shell:
+        "cat {input} | grep {wildcards.chromosome} | csvtk -t plot line - {params.config} {params.title} > {output}"
+
+
+rule ucsc_chromosome:
+    output:
+        fasta="{chromosome}.{start}-{end}.fasta",
+    input:
+        bit="hs1.2bit",
+    shell:
+        "twoBitToFa -noMask {input.bit}:{wildcards.chromosome}:{wildcards.start}-{wildcards.end} {output.fasta}"
+
+
+rule cat_merge_simulated_reads:
+    output:
+        R1="{sample}.{dataset}.{chromosome}_R1.fastq.gz",
+        R2="{sample}.{dataset}.{chromosome}_R2.fastq.gz",
+    input:
+        R1=lambda wildcards: expand(
+            f"{wildcards.sample}.{wildcards.dataset}.{wildcards.chromosome}.{{simtype}}_R1.fastq.gz",
+            simtype=SIMTYPE[wildcards.chromosome].keys(),
+        ),
+        R2=lambda wildcards: expand(
+            f"{wildcards.sample}.{wildcards.dataset}.{wildcards.chromosome}.{{simtype}}_R2.fastq.gz",
+            simtype=SIMTYPE[wildcards.chromosome].keys(),
+        ),
+    shell:
+        "cat {input.R1} > {output.R1};"
+        "cat {input.R2} > {output.R2}"
+
+
+rule iss_simulate_reads:
     """Simulate reads with iss"""
     output:
-        R1 = "{sample}.{dataset}.{chromosome}_R1.fastq.gz",
-        R2 = "{sample}.{dataset}.{chromosome}_R2.fastq.gz",
-    params:
-        nreads = 100
+        R1=temp("{sample}.{dataset}.{chromosome}.{simtype}_R1.fastq.gz"),
+        R2=temp("{sample}.{dataset}.{chromosome}.{simtype}_R2.fastq.gz"),
     input:
-        fasta = "{sample}.{dataset}.{chromosome}.fasta"
+        fasta="{sample}.{dataset}.{chromosome}.{simtype}.fasta",
+    params:
+        nreads=lambda wildcards: int(
+            SIMDEPTH[wildcards.chromosome][wildcards.simtype][wildcards.sample]
+            * (
+                SIMTYPE[wildcards.chromosome][wildcards.simtype][1]
+                - SIMTYPE[wildcards.chromosome][wildcards.simtype][0]
+            )
+            / (READ_LENGTH * 2.0)
+        ),
     shell:
-        "iss generate --output {wildcards.sample}.{wildcards.dataset}.{wildcards.chromosome} -z --genomes {input.fasta} --model HiSeq -n {params.nreads}"
+        "iss generate --output {wildcards.sample}.{wildcards.dataset}.{wildcards.chromosome}.{wildcards.simtype} -z --genomes {input.fasta} --model HiSeq -n {params.nreads}"
 
+
+bwasfx = ["amb", "ann", "bwt", "pac", "sa"]
+
+
+rule bwa_index:
+    output:
+        expand("{{prefix}}.fa.{sfx}", sfx=bwasfx),
+    input:
+        "{prefix}.fa",
+    shell:
+        "bwa index {input}"
+
+
+rule samtools_faidx:
+    output:
+        "{prefix}.fa.fai",
+    input:
+        "{prefix}.fa",
+    shell:
+        "samtools faidx {input}"
+
+
+rule samtools_index:
+    output:
+        "{prefix}.bam.bai",
+    input:
+        "{prefix}.bam",
+    shell:
+        "samtools index {input}"
+
+
+rule gatk_sequence_dictionary:
+    output:
+        "{prefix}.dict",
+    input:
+        "{prefix}.fa",
+    shell:
+        "gatk CreateSequenceDictionary -R {input}"
+
+
+rule bwa_align:
+    output:
+        "{sample}.{dataset}.{chromosome}.bam",
+    input:
+        R1="{sample}.{dataset}.{chromosome}_R1.fastq.gz",
+        R2="{sample}.{dataset}.{chromosome}_R2.fastq.gz",
+        ref=expand("{{dataset}}.{{chromosome}}.ref.fa.{sfx}", sfx=bwasfx),
+    params:
+        rg=lambda wildcards: f"'@RG\\tID:{wildcards.sample}\\tSM:{wildcards.sample}'",
+    shell:
+        """bwa mem -R {params.rg} {wildcards.dataset}.{wildcards.chromosome}.ref.fa {input.R1} {input.R2} | samtools fixmate -m - /dev/stdout | samtools sort - | samtools markdup - /dev/stdout | samtools view -h -b -o {output}"""
+
+
+rule gatk_haplotype_caller:
+    output:
+        temp("{sample}.{dataset}.{chromosome}.g.vcf"),
+    input:
+        bam="{sample}.{dataset}.{chromosome}.bam",
+        bai="{sample}.{dataset}.{chromosome}.bam.bai",
+        refidx="{dataset}.{chromosome}.ref.fa",
+        dictfile="{dataset}.{chromosome}.ref.dict",
+    threads: 4
+    shell:
+        "gatk HaplotypeCaller -I {input.bam} -ERC GVCF -O {output} -R {input.refidx} --native-pair-hmm-threads 4"
+
+
+rule gatk_combine_gvcfs:
+    output:
+        temp("{dataset}.{chromosome}.g.vcf.gz"),
+    input:
+        vcf=expand("{sample}.{{dataset}}.{{chromosome}}.g.vcf", sample=SAMPLENAMES),
+        refidx="{dataset}.{chromosome}.ref.fa",
+    params:
+        gvcflist=lambda wildcards, input: " ".join([f"-V {vcf}" for vcf in input.vcf]),
+    shell:
+        "gatk CombineGVCFs -O {output} -R {input.refidx} {params.gvcflist}"
+
+
+rule gatk_genotype_gvcfs:
+    output:
+        "{dataset}.{chromosome}.gatk.vcf.gz",
+    input:
+        vcf="{dataset}.{chromosome}.g.vcf.gz",
+        refidx="{dataset}.{chromosome}.ref.fa",
+    shell:
+        "gatk GenotypeGVCFs -R {input.refidx} -V {input.vcf} -O {output}"
 
 
 rule tabix:
     output:
-        "{prefix}.vcf.gz.tbi"
+        "{prefix}.vcf.gz.tbi",
     input:
-        "{prefix}.vcf.gz"
+        "{prefix}.vcf.gz",
     shell:
         "tabix {input}"
 
+
 # Quality control
-rule pca_ts:
+rule pgtk_pca_ts:
     output:
-        html = "{prefix}.ts.pca.html"
+        html="{prefix}.ts.pca.html",
     input:
-        ts = "{prefix}.ts",
-        yaml = "bokeh.yaml",
+        ts="{prefix}.ts",
+        yaml="bokeh.yaml",
     shell:
         "pgtk tskit pca {input.ts} --bokeh-theme-file {input.yaml} -o {output.html} --components 10"
 
 
-rule pca_vcf:
+rule pgtk_pca_vcf:
     output:
-        html = "{prefix}.vcf.gz.pca.html"
+        html="{prefix}.vcf.gz.pca.html",
     input:
-        vcf = "{prefix}.vcf.gz",
-        tbi = "{prefix}.vcf.gz.tbi",
-        md = "metadata.txt",
-        yaml = "bokeh.yaml"
+        vcf="{prefix}.vcf.gz",
+        tbi="{prefix}.vcf.gz.tbi",
+        md="metadata.txt",
+        yaml="bokeh.yaml",
     shell:
         "pgtk vcf pca {input.vcf} {input.md} --force --bokeh-theme-file {input.yaml} -o {output.html} --components 10"
