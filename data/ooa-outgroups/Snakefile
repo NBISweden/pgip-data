@@ -186,7 +186,7 @@ rule pgtk_makeref:
     input:
         vcf="{dataset}.{chromosome}.vcf.gz",
         tbi="{dataset}.{chromosome}.vcf.gz.tbi",
-        html="{dataset}.{chromosome}.pca.html",
+        html="{dataset}.{chromosome}.vcf.gz.pca.html",
         fasta=lambda wildcards: "".join(
             [
                 wildcards.chromosome,
@@ -207,6 +207,7 @@ rule bcftools_consensus:
         fa=temp("{sample}-{haplotype}.{dataset}.{chromosome}.fasta"),
     input:
         vcf="{dataset}.{chromosome}.vcf.gz",
+        tbi="{dataset}.{chromosome}.vcf.gz.tbi",
         ref="{dataset}.{chromosome}.ref.fa",
     shell:
         "bcftools consensus {input.vcf} -f {input.ref} -s {wildcards.sample} -H {wildcards.haplotype} -p {wildcards.chromosome}-{wildcards.haplotype}- | sed -e s/-1// > {output.fa}"
@@ -422,6 +423,7 @@ rule gatk_haplotype_caller:
         bam="{sample}.{dataset}.{chromosome}.bam",
         bai="{sample}.{dataset}.{chromosome}.bam.bai",
         refidx="{dataset}.{chromosome}.ref.fa",
+        reffaiidx="{dataset}.{chromosome}.ref.fa.fai",
         dictfile="{dataset}.{chromosome}.ref.dict",
     threads: 4
     shell:
