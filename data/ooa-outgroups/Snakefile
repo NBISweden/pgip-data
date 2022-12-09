@@ -89,7 +89,7 @@ wildcard_constraints:
 
 ALL = (
     expand(
-        "{dataset}.{chromosome}.gatk.vcf.gz.tbi", dataset=["ooa"], chromosome=["chr21"]
+        "{dataset}.{chromosome}.gatk.vcf.gz", dataset=["ooa"], chromosome=["chr21"]
     )
     + expand(
         "{dataset}.{chromosome}.gatk.vcf.gz.pca.html",
