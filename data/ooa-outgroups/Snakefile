@@ -1,6 +1,7 @@
 import os
 import tskit
 import numpy as np
+import pandas as pd
 from snakemake.remote.HTTP import RemoteProvider as HTTPRemoteProvider
 
 HTTP = HTTPRemoteProvider()
@@ -17,56 +18,39 @@ SAMPLENAMES = list(
 SAMPLENAMES = [x for y in SAMPLENAMES for x in y]
 REFERENCE_ID = "CEU-4"
 
-LENGTH = {"chr21": 2e6}
-START = {
-    "chr21": 24_100_001,
-}
-END = {
-    "chr21": START["chr21"] + LENGTH["chr21"],
-}
-# Repeat coordinates translated to simulation coordinates: 1 - LENGTH
-REPEATS = {
-    "chr21": [(800_000, 900_000), (1_300_000, 1_400_000)],
-}
-COVERAGE = {"chr21": (15, 5)}
+# SIMREGIONS refers to regions in hs1 to simulate from
+SIMREGIONS = pd.read_csv("regions.csv")
+LENGTH = dict(
+    (r, g.end.max() - g.start.min()) for r, g in SIMREGIONS.groupby("chromosome")
+)
+START = dict((r, g.start.min() + 1) for r, g in SIMREGIONS.groupby("chromosome"))
+END = dict((r, g.end.max()) for r, g in SIMREGIONS.groupby("chromosome"))
 
-SIMTYPE = {
-    "chr21": {
-        "hc": (1, 1_000_000),
-        "lc": (1_000_001, 2_000_000),
-        "repeat_hc": (800_000, 900_000),
-        "repeat_lc": (1_300_000, 1_400_000),
-    },
-}
+SIMTYPE = dict()
+SIMDEPTH = dict()
+for n, g in SIMREGIONS.groupby("chromosome"):
+    SIMTYPE[n] = dict()
+    SIMDEPTH[n] = dict()
+    for rec in g.to_dict("records"):
+        SIMTYPE[n][rec["region"]] = (
+            rec["start"] - g.start.min() + 1,
+            rec["end"] - g.start.min(),
+        )
+        SIMDEPTH[n][rec["region"]] = dict(
+            zip(
+                SAMPLENAMES,
+                np.clip(
+                    np.random.normal(
+                        rec["mean_cov"], rec["sd_cov"], size=len(SAMPLENAMES)
+                    ),
+                    rec["low_clip"],
+                    rec["hi_clip"],
+                ),
+            )
+        )
+
 np.random.seed(2232)
-SIMDEPTH = {
-    "chr21": {
-        "hc": dict(
-            zip(
-                SAMPLENAMES,
-                np.clip(np.random.normal(10, 2, size=len(SAMPLENAMES)), 6.0, 15.0),
-            )
-        ),
-        "lc": dict(
-            zip(
-                SAMPLENAMES,
-                np.clip(np.random.normal(4, 1, size=len(SAMPLENAMES)), 3.0, 7.0),
-            )
-        ),
-        "repeat_hc": dict(
-            zip(
-                SAMPLENAMES,
-                np.clip(np.random.normal(20, 4, size=len(SAMPLENAMES)), 12.0, 40.0),
-            )
-        ),
-        "repeat_lc": dict(
-            zip(
-                SAMPLENAMES,
-                np.clip(np.random.normal(8, 2, size=len(SAMPLENAMES)), 6.0, 18.0),
-            )
-        ),
-    }
-}
+
 # Multiply reference id depth by 2
 for k, v in SIMDEPTH.items():
     for kk, vv in v.items():
@@ -89,12 +73,14 @@ wildcard_constraints:
 
 ALL = (
     expand(
-        "{dataset}.{chromosome}.gatk.vcf.gz", dataset=["ooa"], chromosome=["chr21"]
+        "{dataset}.{chromosome}.gatk.vcf.gz",
+        dataset=["ooa"],
+        chromosome=["chr21", "chr22"],
     )
     + expand(
         "{dataset}.{chromosome}.gatk.vcf.gz.pca.html",
         dataset=["ooa"],
-        chromosome=["chr21"],
+        chromosome=["chr21", "chr22"],
     )
     + ["rulegraph.png"]
 )
@@ -154,7 +140,9 @@ rule tskit_ts2vcf:
     run:
         ts = tskit.load(input.ts)
         with open(output.vcf, "w") as fh:
-            ts.write_vcf(fh, individual_names=SAMPLENAMES)
+            ts.write_vcf(
+                fh, individual_names=SAMPLENAMES, contig_id=wildcards.chromosome
+            )
 
 
 rule bcftools_compress_tsvcf:
@@ -322,8 +310,10 @@ rule ucsc_chromosome:
         fasta="{chromosome}.{start}-{end}.fasta",
     input:
         bit="hs1.2bit",
+    params:
+        start=lambda wildcards: int(wildcards.start) - 1,
     shell:
-        "twoBitToFa -noMask {input.bit}:{wildcards.chromosome}:{wildcards.start}-{wildcards.end} {output.fasta}"
+        "twoBitToFa -noMask {input.bit}:{wildcards.chromosome}:{params.start}-{wildcards.end} {output.fasta}"
 
 
 rule cat_merge_simulated_reads:
@@ -358,10 +348,10 @@ rule iss_simulate_reads:
                 SIMTYPE[wildcards.chromosome][wildcards.simtype][1]
                 - SIMTYPE[wildcards.chromosome][wildcards.simtype][0]
             )
-            / (READ_LENGTH * 2.0)
+            / (READ_LENGTH)
         ),
     shell:
-        "iss generate --output {wildcards.sample}.{wildcards.dataset}.{wildcards.chromosome}.{wildcards.simtype} -z --genomes {input.fasta} --model HiSeq -n {params.nreads}"
+        "iss generate --output {wildcards.sample}.{wildcards.dataset}.{wildcards.chromosome}.{wildcards.simtype} -z --genomes {input.fasta} --model HiSeq --gc_bias -n {params.nreads}"
 
 
 bwasfx = ["amb", "ann", "bwt", "pac", "sa"]

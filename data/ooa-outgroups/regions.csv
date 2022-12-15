@@ -1,0 +1,5 @@
+chromosome,start,end,region,mean_cov,sd_cov,low_clip,hi_clip
+chr21,24100000,25100000,hc,12,2,8,16
+chr21,24900000,25000000,repeat_hc,24,4,18,35
+chr22,25100000,26100000,lc,3,1,1,5
+chr22,25400000,25500000,repeat_lc,9,2,6,14

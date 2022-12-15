@@ -1,6 +1,7 @@
 cyvcf2
 joblib
 insilicoseq
+matplotlib
 biopython == 1.78
 h5py
-pgtk @ git+https://github.com/percyfal/pgtk@pyproject
+pgtk @ git+https://github.com/percyfal/pgtk@main

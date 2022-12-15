@@ -13,3 +13,4 @@ dependencies:
   - samtools
   - seqkit
   - tskit
+  - ucsc-twobittofa

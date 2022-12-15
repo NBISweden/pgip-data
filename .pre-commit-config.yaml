@@ -5,9 +5,19 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
       - id: mixed-line-ending
+        exclude: |
+          (?x)^(
+          data/ooa-outgroups/ooa.chr21.ts |
+          data/ooa-outgroups/ooa.chr22.ts
+          )$
       - id: check-case-conflict
       - id: check-yaml
       - id: trailing-whitespace
+        exclude: |
+          (?x)^(
+          data/ooa-outgroups/ooa.chr21.ts |
+          data/ooa-outgroups/ooa.chr22.ts
+          )$
   - repo: https://github.com/asottile/reorder_python_imports
     rev: v3.9.0
     hooks:
