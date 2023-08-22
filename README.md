@@ -3,7 +3,7 @@
 ## About
 
 Data repository for course  [Population Genomics in
-Practice](https://uppsala.instructure.com/courses/52168).
+Practice](https://github.com/NBISweden/workshop-pgip).
 
 ## Data generation
 
