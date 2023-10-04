@@ -1,3 +1,19 @@
+"""Download and remap sequence data from an SRA bioproject
+
+Currently the workflow reads a configuration file that contains
+information about bioproject, reference, and more. See
+../config/config.yaml for an example. The current format also supports
+the definition of regions of interest, from which mapped reads will be
+extracted.
+
+Monkeyflower examples have been generated with command
+
+    snakemake -j 14 --profile workflow/local
+
+The workflow/local directory holds a configuration file for a
+snakemake profile that sets some useful snakemake options.
+
+"""
 import os
 import sys
 import re
@@ -432,7 +448,7 @@ rule subset_reference_to_roi:
     threads: 1
     shell:
         """
-        seqtk subseq {input.fasta} {input.bed} > {output.fasta} 2> {log}
+        seqtk subseq -l 60 {input.fasta} {input.bed} > {output.fasta} 2> {log}
         """
 
 rule subset_bam_for_roi:
