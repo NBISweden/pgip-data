@@ -1,0 +1,27 @@
+bioproject: PRJNA549183
+sraruninfo:
+  csvtk.filter2: $LibraryStrategy=="WGS" && $SampleName!="Assembly Plant"
+datasources:
+  samples.docx: https://doi.org/10.1371/journal.pbio.3000391.s003
+  M_aurantiacus_v1_splitline_ordered.fasta: http://mimubase.org/FTP/Genomes/Maurantiacus_v1.0/M_aurantiacus_v1_splitline_ordered.fasta
+  MAUR_annotation_functional_submission.gff: http://mimubase.org/FTP/Genomes/Maurantiacus_v1.0/MAUR_annotation_functional_submission.gff
+reference: M_aurantiacus_v1_splitline_ordered.fasta
+repeatlibrary: mim_repeat_lib_aug10
+species: "Mimulus guttatus"
+
+# Output data. Key is output directory, value are output files
+output:
+  tiny:
+    relpath: ..
+    roi:
+      - "LG4:12000000-12100000"
+    ubam: true
+    fastq: true
+    reference: true
+  small:
+    relpath: ..
+    roi:
+      - "LG4:11000000-14000000"
+    ubam: true
+    fastq: true
+    reference: true

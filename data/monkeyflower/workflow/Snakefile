@@ -1,0 +1,559 @@
+import os
+import sys
+import re
+import pandas as pd
+import shutil
+from snakemake.remote.NCBI import RemoteProvider as NCBIRemoteProvider
+from snakemake.remote.NCBI import NCBIFileException
+from snakemake.remote.HTTP import RemoteProvider
+from pathlib import Path
+import logging
+
+try:
+    include: "custom.smk"
+    custom_all=rules.custom_all.input
+except Exception as e:
+    print(e)
+    custom_all=[]
+    pass
+
+configfile: "config/config.yaml"
+workdir: config["bioproject"]
+
+envvars:
+    "EMAIL"
+if "repeatlibrary" in config.keys():
+    envvars:
+        "REPEATMASKER_LIBDIR"
+
+##############################
+# Settings
+##############################
+# csvtk filter2
+csvtk_filter2 = ""
+if "sraruninfo" in config.keys():
+    if "csvtk.filter2" in config["sraruninfo"].keys():
+        csvtk_filter2 = config["sraruninfo"]["csvtk.filter2"]
+        csvtk_filter2 = f"-f '{csvtk_filter2}'"
+# Data sources
+datasources = dict()
+if "datasources" in config.keys():
+    datasources = dict(zip(config["datasources"].keys(),
+                           config["datasources"].values()))
+if "repeatlibrary" not in config.keys():
+    config["repeatlibrary"] = "repeats"
+
+
+try:
+    sraruninfo = pd.read_csv("SraRunInfo.csv")
+except Exception as e:
+    logging.error("No SraRunInfo.csv available yet! Rerun workflow once it has been downloaded")
+    sraruninfo = pd.DataFrame(columns=["Run", "SampleName"])
+    pass
+
+NCBI = NCBIRemoteProvider(email=os.environ["EMAIL"])
+HTTP = RemoteProvider()
+
+try:
+    REPEATMASKER_DIR=os.path.dirname(os.path.realpath(shutil.which("RepeatMasker")))
+except Exception as e:
+    raise
+
+wildcard_constraints:
+    roi="(|" + "|".join([x for x in config.get("output", {}).keys()]) + ")",
+    sep="(|/)",
+    srrid="(" + "|".join(sraruninfo.Run.values) + ")",
+    sampleid="(" + "|".join(sraruninfo.SampleName.values) + ")",
+
+
+all_results = dict(
+    sampleinfo=["SraRunInfo.csv"],
+    datasources=list(datasources.keys()),
+    custom=custom_all,
+    masked=expand(f'{config["reference"]}.{{suffix}}', suffix=["masked", "out", "tbl"]),
+    srrbam=expand("{srrid}/{srrid}.{sampleid}.sort.md.bam.bai", zip, \
+                  srrid=sraruninfo.Run.values, \
+                  sampleid=sraruninfo.SampleName.values)
+)
+
+
+if "repeatlibrary" in config.keys():
+    all_results["repeats"] = [f'{config["repeatlibrary"]}-families.fa']
+    all_results["merged.lib"] = expand(
+        f'{config["reference"]}.{config["repeatlibrary"]}.merged.{{suffix}}',
+        suffix=["masked", "out", "tbl"]
+    )
+
+if "output" in config.keys():
+    ubam="{roi}/{{srrid}}/{{srrid}}.{{sampleid}}.unmapped.bam"
+    fastq="{roi}/{{srrid}}/{{srrid}}.{{sampleid}}_{read}.fastq.gz"
+    reference=f"{{roi}}/{config['reference']}"
+    for roi, obj in config["output"].items():
+        key = f"output.{roi}"
+        all_results[key] = expand(f"{roi}/{{srrid}}/{{srrid}}.{{sampleid}}.sort.bam.bai", zip,
+                                  srrid=sraruninfo.Run.values, \
+                                  sampleid=sraruninfo.SampleName.values)
+
+
+
+rule all:
+    """Pseudo-rule for all targets"""
+    input: **all_results
+
+##############################
+# SRR module
+#
+# Download project data for a bioproject
+#
+##############################
+rule download_sraruninfo:
+    """Download sraruninfo for bioproject.
+
+    config["sraruninfo"] configuration section contains configurations
+    that apply to this rule.
+
+    csvtk.filter2: set csvtk filter2 filtering parameter
+    """
+    output:
+        "SraRunInfo.csv",
+    benchmark: "benchmarks/SraRunInfo.csv.benchmark.txt",
+    params:
+        bioproject=config["bioproject"],
+        filter2=csvtk_filter2,
+    log: "logs/SraRunInfo.csv.log",
+    threads: 1
+    shell:
+        """
+        esearch -db sra -query '{params.bioproject}' |
+            efetch -format runinfo |
+            csvtk filter2 {params.filter2} > {output}
+        """
+
+
+rule download_datasources:
+    """Download datasources listed in config file using wget"""
+    output:
+        urltarget="{urltarget}",
+    input:
+        urlsource=lambda wildcards: HTTP.remote(config.get("datasources", {}).get(wildcards.urltarget))
+    wildcard_constraints:
+        urltarget=f'({"|".join([str(x) for x in set(datasources.keys())])})'
+    benchmark: "benchmarks/{urltarget}.benchmark.txt",
+    log: "logs/{urltarget}.log",
+    threads: 1
+    shell:
+        """
+        wget {input.urlsource} -O {output.urltarget}
+        """
+
+##############################
+# Reference indexing
+##############################
+rule samtools_faidx:
+    """Run samtools faidx"""
+    output: "{prefix}.fasta.fai",
+    input: "{prefix}.fasta",
+    benchmark: "benchmarks/{prefix}.fasta.fai.benchmark.txt",
+    log: "logs/{prefix}.fasta.fai.log",
+    threads: 1
+    shell:
+        """samtools faidx {input}"""
+
+rule picard_create_sequence_dictionary:
+    """Create sequence dictionary"""
+    output: "{prefix}.dict",
+    input: "{prefix}.fasta",
+    benchmark: "benchmarks/{prefix}.dict.benchmark.txt",
+    log: "logs/{prefix}.dict.log",
+    threads: 1
+    shell:
+        """picard CreateSequenceDictionary --REFERENCE {input} > {log} 2>&1"""
+
+
+##############################
+# Repeat masking
+##############################
+rule build_database:
+    """Build repeatmasker database"""
+    output:
+        lib=expand("{lib}.{sfx}", lib=config["repeatlibrary"],
+                   sfx=["nhr", "nin", "njs", "nnd",
+                        "nni", "nog", "nsq",
+                        "translation"]),
+    input: config["reference"],
+    benchmark: "benchmarks/repeats.benchmark.txt",
+    log: "logs/repeats.builddatabase.log",
+    threads: 1
+    shell:
+        """
+        BuildDatabase -name {output} -engine ncbi {input} > {log} 2>&1
+        """
+
+rule repeat_modeler:
+    """Run repeatmodeler"""
+    output:
+        fa="{lib}-families.fa",
+        stk="{lib}-families.stk",
+    input:
+        lib="{lib}.nhr"
+    wildcard_constraints:
+        lib=config["repeatlibrary"]
+    params:
+        lib=config["repeatlibrary"],
+    benchmark: "benchmarks/repeat_modeler.{lib}.benchmark.txt"
+    log: "logs/repeat_modeler.{lib}.log"
+    threads: 12
+    shell:
+        """
+        RepeatModeler -database {params.lib} -threads {threads} > {log} 2>&1
+        """
+
+rule repeat_masker_get_dfam_curated:
+    """Install dfam_curated library
+
+    One has to manually download and link a dfam library in the
+    RepeatMasker installation location. The RepeatMasker directory is
+    located at $(dirname $(readlink -f $(which RepeatMasker))). The
+    dfam curated library is small enough to serve the purposes of this
+    example.
+
+        wget https://www.dfam.org/releases/Dfam_3.7/families/Dfam_curatedonly.h5.gz -O $(dirname $(readlink -f $(which RepeatMasker)))
+    """
+    output:
+        h5="Libraries/Dfam.h5"
+    input:
+        dfam_curated=HTTP.remote("https://www.dfam.org/releases/Dfam_3.7/families/Dfam_curatedonly.h5.gz")
+    params:
+        dfam="Libraries/dfam_curated.h5.gz",
+        h5="Libraries/Dfam.h5",
+    benchmark: "benchmarks/repeat_masker/dfam_curated.benchmark.txt"
+    log: "logs/repeat_masker/dfam_curated.log"
+    threads: 1
+    shell:
+        """
+        wget {input.dfam_curated} -O {params.dfam} > {log} 2>&1
+        gzip -dv {params.dfam} >> {log} 2>&1
+        mv {params.dfam} {params.h5}
+        """
+
+rule repeat_masker:
+    """Run repeatmasker on reference with generic repeat library.
+    """
+    output:
+        fasta=f'{config["reference"]}.masked',
+        out=f'{config["reference"]}.out',
+        tbl=f'{config["reference"]}.tbl',
+    input:
+        ref=config["reference"],
+        dfam="Libraries/Dfam.h5",
+    params:
+        species=config.get("species", "nn"),
+        libdir=os.environ.get("REPEATMASKER_LIBDIR")
+    benchmark: "benchmarks/repeat_masker/masked.fasta.benchmark.txt",
+    log: "logs/repeat_masker/masked.fasta.log",
+    threads: 14
+    shell:
+        """
+        RepeatMasker -libdir Libraries -libdir {params.libdir}  -species "{params.species}" -gff -pa {threads} -a -xsmall {input.ref} > {log} 2>&1
+        """
+
+rule repeat_masker_custom:
+    """Run repeatmasker on reference with custom repeat library"""
+    output:
+        fasta=f'{config["reference"]}.{{lib}}.masked',
+        out=f'{config["reference"]}.{{lib}}.out',
+        tbl=f'{config["reference"]}.{{lib}}.tbl'
+    input:
+        ref=f'{config["reference"]}.masked',
+        lib="{lib}-families.fa",
+    wildcard_constraints:
+        lib=config["repeatlibrary"],
+    params:
+        species=config.get("species", "nn"),
+        ref={config["reference"]},
+    benchmark: "benchmarks/repeat_masker/{lib}.masked.fasta.benchmark.txt",
+    log: "logs/repeat_masker/{lib}.masked.fasta.log",
+    threads: 14
+    shell:
+        """
+        RepeatMasker -lib {input.lib} -gff -pa {threads} -a -xsmall {input.ref} > {log} 2>&1
+        rename "s/{params.ref}.masked/{params.ref}.{wildcards.lib}/g" {input.ref}.*
+        """
+
+rule repeat_masker_combine:
+    """Combine repeatmasker outputs"""
+    output:
+        out=f'{config["reference"]}.{{lib}}.merged.{{suffix}}',
+    input:
+        custom=f'{config["reference"]}.{{lib}}.{{suffix}}',
+        rm=f'{config["reference"]}.{{suffix}}'
+    wildcard_constraints:
+        suffix = "(out|tbl|masked)"
+    benchmark: "benchmarks/repeat_masker/{lib}.merged.{suffix}.benchmark.txt",
+    log: "logs/repeat_masker/{lib}.merged.{suffix}.log",
+    threads: 1
+    shell:
+        """
+        cat {input.rm} {input.custom} > {output.out}
+        """
+
+##############################
+# Mapping
+##############################
+BWA_INDEX_SUFFIX=["amb", "ann", "bwt", "pac", "sa"]
+rule bwa_index:
+    """Create bwa index for input file"""
+    output:
+        index=expand("{{prefix}}.fasta.{suffix}", suffix=BWA_INDEX_SUFFIX)
+    input:
+        fasta="{prefix}.fasta",
+    benchmark: "benchmarks/{prefix}.fasta.bwa_index.benchmark.txt",
+    log: "logs/{prefix}.fasta.bwa_index.log",
+    threads: 1
+    shell:
+        """bwa index {input.fasta} > {log} 2>&1"""
+
+rule sra_prefetch:
+    """Prefetch sra record"""
+    output:
+        srrid=temp("{srrid}/{srrid}.sra"),
+    wildcard_constraints:
+        srrid=f'({"|".join(sraruninfo.Run.values)})'
+    benchmark: "benchmarks/sra_prefetch/{srrid}.benchmark.txt",
+    log: "logs/sra_prefetch/{srrid}.log",
+    threads: 1
+    shell:
+        """
+        prefetch -p {output.srrid} > {log} 2>&1
+        """
+
+def get_read_group(wildcards):
+    run=wildcards.srrid
+    sample = sraruninfo[sraruninfo["Run"] == run].Sample.values[0]
+    rg = f'-R "@RG\\tID:{wildcards.srrid}\\tSM:{sample}\\tPL:ILLUMINA"',
+    return rg
+
+
+rule bwa_mem_srrinput:
+    """Map SRR data on the fly and convert to bam"""
+    output:
+        bam="{srrid}/{srrid}.{sampleid}.sort.md.bam",
+    input:
+        srr="{srrid}/{srrid}.sra",
+        reference=config["reference"],
+        index=expand("{ref}.{sfx}", ref=config["reference"], sfx=BWA_INDEX_SUFFIX),
+    params:
+        rg=get_read_group,
+        options="-M"
+    benchmark: "benchmarks/{srrid}/{srrid}.{sampleid}.sort.md.bam.benchmark.txt",
+    log: "logs/{srrid}/{srrid}.{sampleid}.sort.md.bam.log",
+    threads: 14
+    shell:
+        """
+        fasterq-dump --skip-technical -Z --split-spot {input.srr} |
+            bwa mem {params.rg} -p -t {threads} {params.options} {input.reference} - |
+            samtools fixmate -m - /dev/stdout |
+            samtools sort - | samtools markdup - /dev/stdout |
+            samtools view -h -b -o {output.bam} 2> {log}
+        """
+
+rule bwa_mem_ubam_to_roi:
+    """Map ubam file to roi"""
+    output:
+        bam="{roi}/{srrid}/{srrid}.{sampleid}.sort.bam",
+    input:
+        reference=os.path.join("{roi}", config['reference']),
+        index=expand(os.path.join("{{roi}}", "{ref}.{sfx}"), ref=config["reference"], sfx=BWA_INDEX_SUFFIX),
+        bam="{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam",
+        bai="{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam.bai",
+    params:
+        rg=get_read_group,
+        options="-M"
+    benchmark: "benchmarks/bwa_mem_roi/{roi}/{srrid}/{srrid}.{sampleid}.bam.benchmark.txt",
+    log: "logs/bwa_mem_roi/{roi}/{srrid}/{srrid}.{sampleid}.bam.log",
+    threads: 14
+    shell:
+        """
+            samtools fastq {input.bam} 2> {log}|
+            bwa mem {params.rg} -p -t {threads} {params.options} {input.reference} - 2>> {log} |
+            samtools fixmate -m - /dev/stdout |
+            samtools sort - |
+            samtools view -h -b -o {output.bam} >> {log} 2>&1
+        """
+
+
+rule samtools_index_bam:
+    """Index bam file"""
+    output: "{roi}{sep}{srrid}/{srrid}.{sampleid}.{tag}.bam.bai",
+    input: "{roi}{sep}{srrid}/{srrid}.{sampleid}.{tag}.bam",
+    benchmark: "benchmarks/samtools_index_bam/{roi}{sep}{srrid}/{srrid}.{sampleid}.{tag}.bam.bai.benchmark.txt",
+    log: "logs/samtools_index_bam/{srrid}/{roi}{sep}{srrid}.{sampleid}.{tag}.bam.bai.log",
+    threads: 1
+    shell:
+        """
+        samtools index {input} > {log} 2>&1
+        """
+
+
+##############################
+# Region-based analyses (roi)
+#
+# 1. Subset reference to roi
+#
+# 2. Subset bam to roi
+#
+# 3. Make ubam
+#
+# 4. Remap ubam to reference
+##############################
+rule make_roi_bed:
+    """Make roi bedfile"""
+    output: "{roi}/{roi}.bed",
+    params:
+        roi = lambda wildcards: "\n".join(["\t".join(re.split(":|-", x)) for x in config["output"][wildcards.roi]["roi"]])
+    benchmark: "benchmarks/make_roi_bed/{roi}.bed.benchmark.txt",
+    log: "logs/make_roi_bed/{roi}.bed.log",
+    threads: 1
+    shell:
+        """
+        echo -e "{params.roi}" > {output}
+        """
+
+rule subset_reference_to_roi:
+    """Subset reference sequence to roi"""
+    output:
+        fasta=os.path.join("{roi}", config["reference"]),
+    input:
+        fasta=config["reference"],
+        fai=config["reference"] + ".fai",
+        bed="{roi}/{roi}.bed"
+    benchmark: "benchmarks/subset_reference_to_roi/{roi}.benchmark.txt",
+    log: "logs/subset_reference_to_roi/{roi}.log",
+    threads: 1
+    shell:
+        """
+        seqtk subseq {input.fasta} {input.bed} > {output.fasta} 2> {log}
+        """
+
+rule subset_bam_for_roi:
+    """Subset bam file for roi"""
+    output:
+        bam="{roi}/{srrid}/{srrid}.{sampleid}.roi.bam",
+    input:
+        bam="{srrid}/{srrid}.{sampleid}.sort.md.bam",
+        bai="{srrid}/{srrid}.{sampleid}.sort.md.bam.bai",
+    params:
+        roi=lambda wildcards: " ".join([f'"{x}"' for x in config["output"][wildcards.roi]["roi"]])
+    benchmark: "benchmarks/subset_bam_for_roi/{roi}/{srrid}/{srrid}.{sampleid}.roi.bam.benchmark.txt",
+    log: "logs/subset_bam_for_roi/{roi}/{srrid}/{srrid}.{sampleid}.roi.bam.log",
+    threads: 1
+    shell:
+        """
+        samtools view -P {input.bam} {params.roi} -h -b -o {output.bam} > {log} 2>&1
+        """
+
+rule make_ubam_for_roi:
+    """Make ubam file for roi"""
+    output:
+        bam="{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam",
+    input:
+        bam="{roi}/{srrid}/{srrid}.{sampleid}.roi.bam",
+    benchmark: "benchmarks/make_ubam_for_roi/{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam.benchmark.txt",
+    log: "logs/make_ubam_for_roi/{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam.log",
+    threads: 1
+    shell:
+        """
+        picard RevertSam --INPUT {input.bam} \
+                   --OUTPUT {output.bam} \
+                   --SANITIZE true \
+                   --MAX_DISCARD_FRACTION 0.5 \
+                   --ATTRIBUTE_TO_CLEAR XT \
+                   --ATTRIBUTE_TO_CLEAR XN \
+                   --ATTRIBUTE_TO_CLEAR AS \
+                   --ATTRIBUTE_TO_CLEAR OC \
+                   --ATTRIBUTE_TO_CLEAR OP \
+                   --SORT_ORDER queryname \
+                   --RESTORE_ORIGINAL_QUALITIES true \
+                   --REMOVE_DUPLICATE_INFORMATION true \
+                   --REMOVE_ALIGNMENT_INFORMATION true \
+                   > {log} 2>&1
+        """
+
+rule samtools_fastq_roi:
+    """Make fastq files from roi"""
+    output:
+        R1="{roi}/{srrid}/{srrid}.{sampleid}_R1.fastq.gz",
+        R2="{roi}/{srrid}/{srrid}.{sampleid}_R2.fastq.gz",
+    input:
+        bam="{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam",
+        bai="{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam.bai",
+    benchmark: "benchmarks/samtools_fastq_roi/{roi}/{srrid}/{srrid}.{sampleid}.fastq.gz.benchmark.txt",
+    log: "logs/samtools_fastq_roi/{roi}/{srrid}/{srrid}.{sampleid}.fastq.gz.log",
+    threads: 1
+    shell:
+        """
+        samtools fastq -1 {output.R1} -2 {output.R2} -0 /dev/null -n {input.bam}
+        """
+
+
+##############################
+# Variant calling
+##############################
+
+
+##############################
+# Make save script
+##############################
+def make_roi_save_script_input(wildcards):
+    roi = config["output"][wildcards.roi]
+    data = []
+    if roi["ubam"]:
+        data.extend(
+            expand(f"{wildcards.roi}/{{srrid}}/{{srrid}}.{{sampleid}}.unmapped.bam",
+                   zip,
+                   srrid=sraruninfo.Run.values,
+                   sampleid=sraruninfo.SampleName.values)
+        )
+        data.extend(
+            expand(f"{wildcards.roi}/{{srrid}}/{{srrid}}.{{sampleid}}.unmapped.bam.bai",
+                   zip,
+                   srrid=sraruninfo.Run.values,
+                   sampleid=sraruninfo.SampleName.values)
+        )
+    if roi["fastq"]:
+        data.extend(
+            expand(f"{wildcards.roi}/{{srrid}}/{{srrid}}.{{sampleid}}_R1.fastq.gz",
+                   zip,
+                   srrid=sraruninfo.Run.values,
+                   sampleid=sraruninfo.SampleName.values)
+        )
+        data.extend(
+            expand(f"{wildcards.roi}/{{srrid}}/{{srrid}}.{{sampleid}}_R2.fastq.gz",
+                   zip,
+                   srrid=sraruninfo.Run.values,
+                   sampleid=sraruninfo.SampleName.values)
+        )
+    if roi["reference"]:
+        data.append(os.path.join(wildcards.roi, config["reference"]))
+    return data
+
+
+rule make_roi_save_script:
+    """Make roi save script"""
+    output:
+        sh="{roi}/save.sh"
+    input:
+        make_roi_save_script_input,
+    params:
+        ubam = lambda wildcards:  '--include \"*.unmapped.bam*\"' if config["output"][wildcards.roi]["ubam"] else "",
+        fastq = lambda wildcards:  '--include \"*_R[12].fastq.gz\"' if config["output"][wildcards.roi]["fastq"] else "",
+        reference = lambda wildcards:  f'--include \"{config["reference"]}\"' if config["output"][wildcards.roi]["reference"] else "",
+        outdir = lambda wildcards: config["output"][wildcards.roi]["relpath"]
+    threads: 1
+    shell:
+        """
+        echo "#/bin/bash" > {output.sh};
+        echo 'rsync -av --include=\"*/\" {params.ubam}\
+            {params.fastq} {params.reference} \
+            --exclude=\"*\" {wildcards.roi} {params.outdir}' >> {output.sh}
+        """
