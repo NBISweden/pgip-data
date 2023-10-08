@@ -1,0 +1,20 @@
+name: pgip-data
+channels:
+  - conda-forge
+  - bioconda
+  - default
+dependencies:
+  - bcftools
+  - biopython
+  - bwa
+  - csvtk
+  - fastqc
+  - gatk4
+  - picard
+  - qualimap
+  - samtools
+  - seqtk
+  - seqkit
+  - snakemake
+  # sra-tools and picard are incompatible
+  # - sra-tools

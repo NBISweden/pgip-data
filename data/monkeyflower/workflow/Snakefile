@@ -87,7 +87,7 @@ all_results = dict(
     datasources=list(datasources.keys()),
     custom=custom_all,
     masked=expand(f'{config["reference"]}.{{suffix}}', suffix=["masked", "out", "tbl"]),
-    srrbam=expand("{srrid}/{srrid}.{sampleid}.sort.md.bam.bai", zip, \
+    srrbam=expand("{sampleid}/{srrid}.sort.md.bam.bai", zip, \
                   srrid=sraruninfo.Run.values, \
                   sampleid=sraruninfo.SampleName.values)
 )
@@ -101,15 +101,18 @@ if "repeatlibrary" in config.keys():
     )
 
 if "output" in config.keys():
-    ubam="{roi}/{{srrid}}/{{srrid}}.{{sampleid}}.unmapped.bam"
-    fastq="{roi}/{{srrid}}/{{srrid}}.{{sampleid}}_{read}.fastq.gz"
-    reference=f"{{roi}}/{config['reference']}"
     for roi, obj in config["output"].items():
         key = f"output.{roi}"
-        all_results[key] = expand(f"{roi}/{{srrid}}/{{srrid}}.{{sampleid}}.sort.bam.bai", zip,
-                                  srrid=sraruninfo.Run.values, \
-                                  sampleid=sraruninfo.SampleName.values)
-
+        results = [os.path.join(f"{roi}", "allsites.vcf.gz.tbi")]
+        results.extend(expand(f"{roi}/{{sampleid}}/{{srrid}}_R1.fastq.gz",
+                              zip, \
+                              srrid=sraruninfo.Run.values, \
+                              sampleid=sraruninfo.SampleName.values))
+        results.extend(expand(f"{roi}/{{sampleid}}/{{srrid}}_R2.fastq.gz",
+                              zip, \
+                              srrid=sraruninfo.Run.values, \
+                              sampleid=sraruninfo.SampleName.values))
+        all_results[key] = results
 
 
 rule all:
@@ -136,6 +139,7 @@ rule download_sraruninfo:
     params:
         bioproject=config["bioproject"],
         filter2=csvtk_filter2,
+    conda: "envs/sratools.yaml",
     log: "logs/SraRunInfo.csv.log",
     threads: 1
     shell:
@@ -154,6 +158,7 @@ rule download_datasources:
         urlsource=lambda wildcards: HTTP.remote(config.get("datasources", {}).get(wildcards.urltarget))
     wildcard_constraints:
         urltarget=f'({"|".join([str(x) for x in set(datasources.keys())])})'
+    conda: "envs/environment.yml",
     benchmark: "benchmarks/{urltarget}.benchmark.txt",
     log: "logs/{urltarget}.log",
     threads: 1
@@ -169,6 +174,7 @@ rule samtools_faidx:
     """Run samtools faidx"""
     output: "{prefix}.fasta.fai",
     input: "{prefix}.fasta",
+    conda: "envs/environment.yml",
     benchmark: "benchmarks/{prefix}.fasta.fai.benchmark.txt",
     log: "logs/{prefix}.fasta.fai.log",
     threads: 1
@@ -179,6 +185,7 @@ rule picard_create_sequence_dictionary:
     """Create sequence dictionary"""
     output: "{prefix}.dict",
     input: "{prefix}.fasta",
+    conda: "envs/environment.yml",
     benchmark: "benchmarks/{prefix}.dict.benchmark.txt",
     log: "logs/{prefix}.dict.log",
     threads: 1
@@ -197,6 +204,7 @@ rule build_database:
                         "nni", "nog", "nsq",
                         "translation"]),
     input: config["reference"],
+    conda: "envs/repeatmasker.yml",
     benchmark: "benchmarks/repeats.benchmark.txt",
     log: "logs/repeats.builddatabase.log",
     threads: 1
@@ -216,6 +224,7 @@ rule repeat_modeler:
         lib=config["repeatlibrary"]
     params:
         lib=config["repeatlibrary"],
+    conda: "envs/repeatmasker.yml",
     benchmark: "benchmarks/repeat_modeler.{lib}.benchmark.txt"
     log: "logs/repeat_modeler.{lib}.log"
     threads: 12
@@ -242,6 +251,7 @@ rule repeat_masker_get_dfam_curated:
     params:
         dfam="Libraries/dfam_curated.h5.gz",
         h5="Libraries/Dfam.h5",
+    conda: "envs/repeatmasker.yml",
     benchmark: "benchmarks/repeat_masker/dfam_curated.benchmark.txt"
     log: "logs/repeat_masker/dfam_curated.log"
     threads: 1
@@ -265,6 +275,7 @@ rule repeat_masker:
     params:
         species=config.get("species", "nn"),
         libdir=os.environ.get("REPEATMASKER_LIBDIR")
+    conda: "envs/repeatmasker.yml",
     benchmark: "benchmarks/repeat_masker/masked.fasta.benchmark.txt",
     log: "logs/repeat_masker/masked.fasta.log",
     threads: 14
@@ -287,6 +298,7 @@ rule repeat_masker_custom:
     params:
         species=config.get("species", "nn"),
         ref={config["reference"]},
+    conda: "envs/repeatmasker.yml",
     benchmark: "benchmarks/repeat_masker/{lib}.masked.fasta.benchmark.txt",
     log: "logs/repeat_masker/{lib}.masked.fasta.log",
     threads: 14
@@ -305,6 +317,7 @@ rule repeat_masker_combine:
         rm=f'{config["reference"]}.{{suffix}}'
     wildcard_constraints:
         suffix = "(out|tbl|masked)"
+    conda: "envs/repeatmasker.yml",
     benchmark: "benchmarks/repeat_masker/{lib}.merged.{suffix}.benchmark.txt",
     log: "logs/repeat_masker/{lib}.merged.{suffix}.log",
     threads: 1
@@ -323,6 +336,7 @@ rule bwa_index:
         index=expand("{{prefix}}.fasta.{suffix}", suffix=BWA_INDEX_SUFFIX)
     input:
         fasta="{prefix}.fasta",
+    conda: "envs/environment.yml",
     benchmark: "benchmarks/{prefix}.fasta.bwa_index.benchmark.txt",
     log: "logs/{prefix}.fasta.bwa_index.log",
     threads: 1
@@ -330,11 +344,11 @@ rule bwa_index:
         """bwa index {input.fasta} > {log} 2>&1"""
 
 rule sra_prefetch:
-    """Prefetch sra record"""
+    """Prefetch sra record. Note that output name is determined by
+    prefetch."""
     output:
         srrid=temp("{srrid}/{srrid}.sra"),
-    wildcard_constraints:
-        srrid=f'({"|".join(sraruninfo.Run.values)})'
+    conda: "envs/environment.yml",
     benchmark: "benchmarks/sra_prefetch/{srrid}.benchmark.txt",
     log: "logs/sra_prefetch/{srrid}.log",
     threads: 1
@@ -353,7 +367,7 @@ def get_read_group(wildcards):
 rule bwa_mem_srrinput:
     """Map SRR data on the fly and convert to bam"""
     output:
-        bam="{srrid}/{srrid}.{sampleid}.sort.md.bam",
+        bam="{sampleid}/{srrid}.sort.md.bam",
     input:
         srr="{srrid}/{srrid}.sra",
         reference=config["reference"],
@@ -361,8 +375,9 @@ rule bwa_mem_srrinput:
     params:
         rg=get_read_group,
         options="-M"
-    benchmark: "benchmarks/{srrid}/{srrid}.{sampleid}.sort.md.bam.benchmark.txt",
-    log: "logs/{srrid}/{srrid}.{sampleid}.sort.md.bam.log",
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/{sampleid}/{srrid}.sort.md.bam.benchmark.txt",
+    log: "logs/{sampleid}/{srrid}.sort.md.bam.log",
     threads: 14
     shell:
         """
@@ -376,17 +391,18 @@ rule bwa_mem_srrinput:
 rule bwa_mem_ubam_to_roi:
     """Map ubam file to roi"""
     output:
-        bam="{roi}/{srrid}/{srrid}.{sampleid}.sort.bam",
+        bam="{roi}/{sampleid}/{srrid}.sort.bam",
     input:
         reference=os.path.join("{roi}", config['reference']),
         index=expand(os.path.join("{{roi}}", "{ref}.{sfx}"), ref=config["reference"], sfx=BWA_INDEX_SUFFIX),
-        bam="{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam",
-        bai="{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam.bai",
+        bam="{roi}/{sampleid}/{srrid}.unmapped.bam",
+        bai="{roi}/{sampleid}/{srrid}.unmapped.bam.bai",
     params:
         rg=get_read_group,
         options="-M"
-    benchmark: "benchmarks/bwa_mem_roi/{roi}/{srrid}/{srrid}.{sampleid}.bam.benchmark.txt",
-    log: "logs/bwa_mem_roi/{roi}/{srrid}/{srrid}.{sampleid}.bam.log",
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/bwa_mem_roi/{roi}/{sampleid}/{srrid}.bam.benchmark.txt",
+    log: "logs/bwa_mem_roi/{roi}/{sampleid}/{srrid}.bam.log",
     threads: 14
     shell:
         """
@@ -400,9 +416,10 @@ rule bwa_mem_ubam_to_roi:
 
 rule samtools_index_bam:
     """Index bam file"""
-    output: "{roi}{sep}{srrid}/{srrid}.{sampleid}.{tag}.bam.bai",
-    input: "{roi}{sep}{srrid}/{srrid}.{sampleid}.{tag}.bam",
-    benchmark: "benchmarks/samtools_index_bam/{roi}{sep}{srrid}/{srrid}.{sampleid}.{tag}.bam.bai.benchmark.txt",
+    output: "{roi}{sep}{sampleid}/{srrid}.{tag}.bam.bai",
+    input: "{roi}{sep}{sampleid}/{srrid}.{tag}.bam",
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/samtools_index_bam/{roi}{sep}{sampleid}/{srrid}.{tag}.bam.bai.benchmark.txt",
     log: "logs/samtools_index_bam/{srrid}/{roi}{sep}{srrid}.{sampleid}.{tag}.bam.bai.log",
     threads: 1
     shell:
@@ -427,6 +444,7 @@ rule make_roi_bed:
     output: "{roi}/{roi}.bed",
     params:
         roi = lambda wildcards: "\n".join(["\t".join(re.split(":|-", x)) for x in config["output"][wildcards.roi]["roi"]])
+    conda: "envs/environment.yml",
     benchmark: "benchmarks/make_roi_bed/{roi}.bed.benchmark.txt",
     log: "logs/make_roi_bed/{roi}.bed.log",
     threads: 1
@@ -443,6 +461,7 @@ rule subset_reference_to_roi:
         fasta=config["reference"],
         fai=config["reference"] + ".fai",
         bed="{roi}/{roi}.bed"
+    conda: "envs/environment.yml",
     benchmark: "benchmarks/subset_reference_to_roi/{roi}.benchmark.txt",
     log: "logs/subset_reference_to_roi/{roi}.log",
     threads: 1
@@ -454,14 +473,15 @@ rule subset_reference_to_roi:
 rule subset_bam_for_roi:
     """Subset bam file for roi"""
     output:
-        bam="{roi}/{srrid}/{srrid}.{sampleid}.roi.bam",
+        bam="{roi}/{sampleid}/{srrid}.roi.bam",
     input:
-        bam="{srrid}/{srrid}.{sampleid}.sort.md.bam",
-        bai="{srrid}/{srrid}.{sampleid}.sort.md.bam.bai",
+        bam="{sampleid}/{srrid}.sort.md.bam",
+        bai="{sampleid}/{srrid}.sort.md.bam.bai",
     params:
         roi=lambda wildcards: " ".join([f'"{x}"' for x in config["output"][wildcards.roi]["roi"]])
-    benchmark: "benchmarks/subset_bam_for_roi/{roi}/{srrid}/{srrid}.{sampleid}.roi.bam.benchmark.txt",
-    log: "logs/subset_bam_for_roi/{roi}/{srrid}/{srrid}.{sampleid}.roi.bam.log",
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/subset_bam_for_roi/{roi}/{sampleid}/{srrid}.roi.bam.benchmark.txt",
+    log: "logs/subset_bam_for_roi/{roi}/{sampleid}/{srrid}.roi.bam.log",
     threads: 1
     shell:
         """
@@ -471,11 +491,12 @@ rule subset_bam_for_roi:
 rule make_ubam_for_roi:
     """Make ubam file for roi"""
     output:
-        bam="{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam",
+        bam="{roi}/{sampleid}/{srrid}.unmapped.bam",
     input:
-        bam="{roi}/{srrid}/{srrid}.{sampleid}.roi.bam",
-    benchmark: "benchmarks/make_ubam_for_roi/{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam.benchmark.txt",
-    log: "logs/make_ubam_for_roi/{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam.log",
+        bam="{roi}/{sampleid}/{srrid}.roi.bam",
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/make_ubam_for_roi/{roi}/{sampleid}/{srrid}.unmapped.bam.benchmark.txt",
+    log: "logs/make_ubam_for_roi/{roi}/{sampleid}/{srrid}.unmapped.bam.log",
     threads: 1
     shell:
         """
@@ -498,13 +519,14 @@ rule make_ubam_for_roi:
 rule samtools_fastq_roi:
     """Make fastq files from roi"""
     output:
-        R1="{roi}/{srrid}/{srrid}.{sampleid}_R1.fastq.gz",
-        R2="{roi}/{srrid}/{srrid}.{sampleid}_R2.fastq.gz",
+        R1="{roi}/{sampleid}/{srrid}_R1.fastq.gz",
+        R2="{roi}/{sampleid}/{srrid}_R2.fastq.gz",
     input:
-        bam="{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam",
-        bai="{roi}/{srrid}/{srrid}.{sampleid}.unmapped.bam.bai",
-    benchmark: "benchmarks/samtools_fastq_roi/{roi}/{srrid}/{srrid}.{sampleid}.fastq.gz.benchmark.txt",
-    log: "logs/samtools_fastq_roi/{roi}/{srrid}/{srrid}.{sampleid}.fastq.gz.log",
+        bam="{roi}/{sampleid}/{srrid}.unmapped.bam",
+        bai="{roi}/{sampleid}/{srrid}.unmapped.bam.bai",
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/samtools_fastq_roi/{roi}/{sampleid}/{srrid}.fastq.gz.benchmark.txt",
+    log: "logs/samtools_fastq_roi/{roi}/{sampleid}/{srrid}.fastq.gz.log",
     threads: 1
     shell:
         """
@@ -515,6 +537,169 @@ rule samtools_fastq_roi:
 ##############################
 # Variant calling
 ##############################
+rule picard_mark_duplicates:
+    """Mark duplicates with picard"""
+    output:
+        bam="{roi}/{sampleid}/{srrid}.sort.dup.bam",
+        metrics="{roi}/{sampleid}/{srrid}.sort.dup.dup_metrics.txt",
+    input:
+        bam="{roi}/{sampleid}/{srrid}.sort.bam",
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/picard_mark_duplicates/{roi}/{sampleid}/{srrid}.sort.dup.bam.benchmark.txt",
+    log: "logs/picard_mark_duplicates/{roi}/{sampleid}/{srrid}.sort.dup.bam.log",
+    threads: 1
+    shell:
+        """
+        picard MarkDuplicates \
+            --CREATE_INDEX true \
+            --INPUT {input.bam} \
+            --METRICS_FILE {output.metrics} \
+            --OUTPUT {output.bam}
+        """
+
+
+rule gatk_haplotypecaller:
+    """Run GATK HaplotypeCaller"""
+    output:
+        vcf="{roi}{sep}{sampleid}/{srrid}.{label}{raw}.hc{mode}.vcf.gz",
+        tbi="{roi}{sep}{sampleid}/{srrid}.{label}{raw}.hc{mode}.vcf.gz.tbi",
+    input:
+        bam="{roi}{sep}{sampleid}/{srrid}.{label}.bam",
+        ref=os.path.join("{roi}", config["reference"]),
+        dict=re.sub(".fasta$", ".dict", os.path.join("{roi}", config["reference"])),
+        fai=os.path.join("{roi}", config["reference"] + ".fai"),
+    params:
+        mode_options=lambda wildcards: "-ERC GVCF" if wildcards.mode == ".g" else "",
+        options=" ".join(["-A", "FisherStrand", "-A", "QualByDepth",
+                          "-A", "MappingQuality", "-G", "StandardAnnotation",
+                          "--minimum-mapping-quality", "50"]),
+    wildcard_constraints:
+        mode="(.g|)",
+        raw="(.raw|)",
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/gatk_haplotypecaller/{roi}{sep}{sampleid}/{srrid}.{label}{raw}.hc{mode}.vcf.gz.benchmark.txt",
+    log: "logs/gatk_haplotypecaller/{roi}{sep}{sampleid}/{srrid}.{label}{raw}.hc{mode}.vcf.gz.log",
+    threads: 1
+    shell:
+        """
+        gatk HaplotypeCaller -OVI true {params.options} {params.mode_options} --input {input.bam} --output {output.vcf} --reference {input.ref}
+        """
+
+def gatk_raw_or_bqsr_variant_filtration_options(wildcards):
+    if wildcards.raw == ".raw":
+        options = [
+            "--filter-name", "FisherStrand",
+            "--filter", "'FS > 50.0'",
+            "--filter-name", "QualByDepth",
+            "--filter", "'QD < 4.0'",
+            "--filter-name", "MappingQuality",
+            "--filter", "'MQ < 50.0'"
+        ]
+    else:
+        options = [
+            "--filter-name", "FisherStrand",
+            "--filter", "'FS > 60.0'",
+            "--filter-name", "QualByDepth",
+            "--filter", "'QD < 2.0'",
+            "--filter-name", "MappingQuality",
+            "--filter", "'MQ < 40.0'"
+        ]
+
+    return " ".join(options)
+
+rule gatk_raw_or_bqsr_variant_filtration:
+    """Filter raw or bqsr variants"""
+    output:
+        vcf="{roi}{sep}{sampleid}/{srrid}.{label}{raw}.hc{mode}.filtered.vcf.gz",
+        tbi="{roi}{sep}{sampleid}/{srrid}.{label}{raw}.hc{mode}.filtered.vcf.gz.tbi",
+    input:
+        vcf="{roi}{sep}{sampleid}/{srrid}.{label}{raw}.hc{mode}.vcf.gz",
+    wildcard_constraints:
+        raw="(.raw|.bqsr)"
+    params:
+        options=gatk_raw_or_bqsr_variant_filtration_options,
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/gatk_raw_variant_filtration/{roi}{sep}{sampleid}/{srrid}.{label}{raw}.hc{mode}.filter.vcf.gz.benchmark.txt",
+    log: "logs/gatk_raw_variant_filtration/{roi}{sep}{sampleid}/{srrid}.{label}{raw}.hc{mode}.filter.vcf.gz.log",
+    threads: 1
+    shell:
+        """
+        gatk VariantFiltration -OVI true --variant {input.vcf} --output {output.vcf} {params.options}
+        """
+
+rule gatk_base_recalibrator:
+    """Recalibrate bases using raw variant calls as known sites"""
+    output:
+        table="{roi}{sep}{sampleid}/{srrid}.{label}.recal.table",
+    input:
+        bam="{roi}{sep}{sampleid}/{srrid}.{label}.bam",
+        known="{roi}{sep}{sampleid}/{srrid}.{label}.raw.hc.g.filtered.vcf.gz",
+        ref=os.path.join("{roi}", config["reference"])
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/gatk_base_recalibrator/{roi}{sep}{sampleid}/{srrid}.{label}.recal.bam.benchmark.txt",
+    log: "logs/gatk_base_recalibrator/{roi}{sep}{sampleid}/{srrid}.{label}.recal.bam.log",
+    threads: 1
+    shell:
+        """
+        gatk BaseRecalibrator -I {input.bam} -R {input.ref} --known-sites {input.known} -O {output.table}
+        """
+
+rule gatk_apply_bqsr:
+    """Apply BQSR on input bam"""
+    output:
+        recal="{roi}{sep}{sampleid}/{srrid}.{label}.recal.bam",
+    input:
+        table="{roi}{sep}{sampleid}/{srrid}.{label}.recal.table",
+        bam="{roi}{sep}{sampleid}/{srrid}.{label}.bam",
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/gatk_bqsr/{roi}{sep}{sampleid}/{srrid}.{label}.recal.output.txt",
+    log: "logs/gatk_bqsr/{roi}{sep}{sampleid}/{srrid}.{label}.recal.log",
+    threads: 1
+    shell:
+        """
+        gatk ApplyBQSR -bqsr {input.table} -I {input.bam} -O {output.recal}
+        """
+
+
+rule gatk_combine_gvcfs:
+    """Run GATK CombineGVCFs"""
+    output:
+        vcf = "{roi}{sep}combine.g.vcf.gz",
+        tbi = "{roi}{sep}combine.g.vcf.gz.tbi",
+    input:
+        vcf = expand("{{roi}}{{sep}}{sampleid}/{srrid}.sort.dup.recal.hc.g.vcf.gz", zip, \
+                     sampleid=sraruninfo.SampleName.values, \
+                     srrid=sraruninfo.Run.values),
+        ref = os.path.join("{roi}", config["reference"])
+    params:
+        vcf = lambda wildcards, input: " ".join([f"-V {x}" for x in input.vcf])
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/gatk_combine_gvcfs/{roi}{sep}all.combined.g.vcf.gz.benchmark.txt",
+    log: "logs/gatk_combine_gvcfs/{roi}{sep}all.combined.g.vcf.gz.log",
+    threads: 1
+    shell:
+        """
+        gatk CombineGVCFs -OVI true --output {output.vcf} --reference {input.ref} {params.vcf}
+        """
+
+rule gatk_genotype_gvcfs:
+    """GATK GenotypeGVCFs"""
+    output:
+        vcf = "{roi}{sep}allsites.vcf.gz",
+        tbi = "{roi}{sep}allsites.vcf.gz.tbi",
+    input:
+        vcf = "{roi}{sep}combine.g.vcf.gz",
+        ref = os.path.join("{roi}", config["reference"]),
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/gatk_genotype_gvcfs/{roi}{sep}allsites.vcf.gz.benchmark.txt",
+    log: "logs/gatk_genotype_gvcfs/{roi}{sep}allsites.log",
+    threads: 1
+    shell:
+        """
+        gatk GenotypeGVCFs -OVI true -R {input.ref} -V {input.vcf} -O {output.vcf} --all-sites
+        """
+
+
 
 
 ##############################
