@@ -620,6 +620,7 @@ rule gatk_apply_bqsr:
     """Apply BQSR on input bam"""
     output:
         recal="{roi}{sep}{sampleid}/{srrid}.{label}.recal.bam",
+        bai="{roi}{sep}{sampleid}/{srrid}.{label}.recal.bai",
     input:
         table="{roi}{sep}{sampleid}/{srrid}.{label}.recal.table",
         bam="{roi}{sep}{sampleid}/{srrid}.{label}.bam",
@@ -685,7 +686,7 @@ rule make_roi_save_script:
         ubam = lambda wildcards:  '--include \"*.unmapped.bam*\"' if config["output"][wildcards.roi]["ubam"] else "",
         fastq = lambda wildcards:  '--include \"*_R[12].fastq.gz\"' if config["output"][wildcards.roi]["fastq"] else "",
         recal_gvcf = lambda wildcards: f'--include \"*.recal.hc.g.vcf.gz*\"' if config["output"][wildcards.roi]["recal.gvcf"] else "",
-        recal_bam = lambda wildcards: f'--include \"*.recal.bam\"' if config["output"][wildcards.roi]["recal.bam"] else "",
+        recal_bam = lambda wildcards: f'--include \"*.recal.ba[mi]\"' if config["output"][wildcards.roi]["recal.bam"] else "",
         reference = lambda wildcards:  f'--include \"{config["reference"]}\"' if config["output"][wildcards.roi]["reference"] else "",
         outdir = lambda wildcards: config["output"][wildcards.roi]["relpath"]
     log: "logs/{roi}/save.log"
