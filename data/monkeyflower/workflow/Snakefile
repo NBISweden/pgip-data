@@ -695,5 +695,6 @@ rule make_roi_save_script:
         echo "#/bin/bash" > {output.sh};
         echo 'rsync -av --include=\"*/\" {params.ubam}\
             {params.fastq} {params.reference} {params.recal_gvcf} {params.recal_bam}\
+            --include allsites.vcf.gz* --include combine.g.vcf.gz* \
             --exclude=\"*\" {wildcards.roi} {params.outdir}' >> {output.sh}
         """
