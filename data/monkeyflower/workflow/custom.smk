@@ -13,6 +13,7 @@ rule make_sampleinfo:
     input:
         runinfo="SraRunInfo.csv",
         samples="samples.csv",
+    conda: "envs/environment.yml",
     benchmark:
         "benchmarks/sampleinfo.csv.benchmark.txt"
     log:
