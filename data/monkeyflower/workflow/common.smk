@@ -1,7 +1,7 @@
 def get_read_group(wildcards):
     run=wildcards.srrid
-    sample = sraruninfo[sraruninfo["Run"] == run].Sample.values[0]
-    rg = f'-R "@RG\\tID:{wildcards.srrid}\\tSM:{sample}\\tPL:ILLUMINA"',
+    sample = sraruninfo[sraruninfo["Run"] == run].SampleName.values[0]
+    rg = f'-R "@RG\\tID:{wildcards.srrid}\\tSM:{sample}\\tPL:ILLUMINA"'
     return rg
 
 
