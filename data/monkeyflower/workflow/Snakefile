@@ -25,6 +25,7 @@ from snakemake.remote.HTTP import RemoteProvider
 from pathlib import Path
 import logging
 
+include: "common.smk"
 try:
     include: "custom.smk"
     custom_all=rules.custom_all.input
@@ -103,7 +104,8 @@ if "repeatlibrary" in config.keys():
 if "output" in config.keys():
     for roi, obj in config["output"].items():
         key = f"output.{roi}"
-        results = [os.path.join(f"{roi}", "allsites.vcf.gz.tbi")]
+        results = [os.path.join(f"{roi}", "allsites.vcf.gz.tbi"),
+                   os.path.join(f"{roi}", "save.sh")]
         results.extend(expand(f"{roi}/{{sampleid}}/{{srrid}}_R1.fastq.gz",
                               zip, \
                               srrid=sraruninfo.Run.values, \
@@ -357,13 +359,6 @@ rule sra_prefetch:
         prefetch -p {output.srrid} > {log} 2>&1
         """
 
-def get_read_group(wildcards):
-    run=wildcards.srrid
-    sample = sraruninfo[sraruninfo["Run"] == run].Sample.values[0]
-    rg = f'-R "@RG\\tID:{wildcards.srrid}\\tSM:{sample}\\tPL:ILLUMINA"',
-    return rg
-
-
 rule bwa_mem_srrinput:
     """Map SRR data on the fly and convert to bam"""
     output:
@@ -571,8 +566,7 @@ rule gatk_haplotypecaller:
     params:
         mode_options=lambda wildcards: "-ERC GVCF" if wildcards.mode == ".g" else "",
         options=" ".join(["-A", "FisherStrand", "-A", "QualByDepth",
-                          "-A", "MappingQuality", "-G", "StandardAnnotation",
-                          "--minimum-mapping-quality", "50"]),
+                          "-A", "MappingQuality", "-G", "StandardAnnotation"]),
     wildcard_constraints:
         mode="(.g|)",
         raw="(.raw|)",
@@ -584,28 +578,6 @@ rule gatk_haplotypecaller:
         """
         gatk HaplotypeCaller -OVI true {params.options} {params.mode_options} --input {input.bam} --output {output.vcf} --reference {input.ref}
         """
-
-def gatk_raw_or_bqsr_variant_filtration_options(wildcards):
-    if wildcards.raw == ".raw":
-        options = [
-            "--filter-name", "FisherStrand",
-            "--filter", "'FS > 50.0'",
-            "--filter-name", "QualByDepth",
-            "--filter", "'QD < 4.0'",
-            "--filter-name", "MappingQuality",
-            "--filter", "'MQ < 50.0'"
-        ]
-    else:
-        options = [
-            "--filter-name", "FisherStrand",
-            "--filter", "'FS > 60.0'",
-            "--filter-name", "QualByDepth",
-            "--filter", "'QD < 2.0'",
-            "--filter-name", "MappingQuality",
-            "--filter", "'MQ < 40.0'"
-        ]
-
-    return " ".join(options)
 
 rule gatk_raw_or_bqsr_variant_filtration:
     """Filter raw or bqsr variants"""
@@ -699,62 +671,29 @@ rule gatk_genotype_gvcfs:
         gatk GenotypeGVCFs -OVI true -R {input.ref} -V {input.vcf} -O {output.vcf} --all-sites
         """
 
-
-
-
 ##############################
 # Make save script
 ##############################
-def make_roi_save_script_input(wildcards):
-    roi = config["output"][wildcards.roi]
-    data = []
-    if roi["ubam"]:
-        data.extend(
-            expand(f"{wildcards.roi}/{{srrid}}/{{srrid}}.{{sampleid}}.unmapped.bam",
-                   zip,
-                   srrid=sraruninfo.Run.values,
-                   sampleid=sraruninfo.SampleName.values)
-        )
-        data.extend(
-            expand(f"{wildcards.roi}/{{srrid}}/{{srrid}}.{{sampleid}}.unmapped.bam.bai",
-                   zip,
-                   srrid=sraruninfo.Run.values,
-                   sampleid=sraruninfo.SampleName.values)
-        )
-    if roi["fastq"]:
-        data.extend(
-            expand(f"{wildcards.roi}/{{srrid}}/{{srrid}}.{{sampleid}}_R1.fastq.gz",
-                   zip,
-                   srrid=sraruninfo.Run.values,
-                   sampleid=sraruninfo.SampleName.values)
-        )
-        data.extend(
-            expand(f"{wildcards.roi}/{{srrid}}/{{srrid}}.{{sampleid}}_R2.fastq.gz",
-                   zip,
-                   srrid=sraruninfo.Run.values,
-                   sampleid=sraruninfo.SampleName.values)
-        )
-    if roi["reference"]:
-        data.append(os.path.join(wildcards.roi, config["reference"]))
-    return data
-
-
 rule make_roi_save_script:
     """Make roi save script"""
     output:
         sh="{roi}/save.sh"
     input:
-        make_roi_save_script_input,
+        lambda wildcards: os.path.join(wildcards.roi, "allsites.vcf.gz")
+    conda: "envs/environment.yml",
     params:
         ubam = lambda wildcards:  '--include \"*.unmapped.bam*\"' if config["output"][wildcards.roi]["ubam"] else "",
         fastq = lambda wildcards:  '--include \"*_R[12].fastq.gz\"' if config["output"][wildcards.roi]["fastq"] else "",
+        recal_gvcf = lambda wildcards: f'--include \"*.recal.hc.g.vcf.gz*\"' if config["output"][wildcards.roi]["recal.gvcf"] else "",
+        recal_bam = lambda wildcards: f'--include \"*.recal.bam\"' if config["output"][wildcards.roi]["recal.bam"] else "",
         reference = lambda wildcards:  f'--include \"{config["reference"]}\"' if config["output"][wildcards.roi]["reference"] else "",
         outdir = lambda wildcards: config["output"][wildcards.roi]["relpath"]
+    log: "logs/{roi}/save.log"
     threads: 1
     shell:
         """
         echo "#/bin/bash" > {output.sh};
         echo 'rsync -av --include=\"*/\" {params.ubam}\
-            {params.fastq} {params.reference} \
+            {params.fastq} {params.reference} {params.recal_gvcf} {params.recal_bam}\
             --exclude=\"*\" {wildcards.roi} {params.outdir}' >> {output.sh}
         """
