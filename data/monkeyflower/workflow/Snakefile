@@ -463,7 +463,8 @@ rule subset_reference_to_roi:
     threads: 1
     shell:
         """
-        seqtk subseq -l 60 {input.fasta} {input.bed} > {output.fasta} 2> {log}
+        seqtk subseq -l 60 {input.fasta} {input.bed} |\
+        sed -r 's/>([A-Z0-9a-z]+):([0-9\-]+)/>\\1 \\1:\\2/g' > {output.fasta} 2> {log}
         """
 
 rule subset_bam_for_roi:
