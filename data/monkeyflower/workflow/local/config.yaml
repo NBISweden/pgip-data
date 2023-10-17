@@ -6,6 +6,7 @@ latency-wait: 60
 use-envmodules: true
 use-conda: false
 rerun-triggers: mtime
+rerun-incomplete: true
 # Example resource configuration
 # default-resources:
 #   - runtime=100
