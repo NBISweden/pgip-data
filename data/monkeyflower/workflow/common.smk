@@ -1,10 +1,49 @@
 import re
 
 def get_read_group(wildcards):
-    run=wildcards.srrid
-    sample = sraruninfo[sraruninfo["Run"] == run].SampleName.values[0]
-    rg = f'-R "@RG\\tID:{wildcards.srrid}\\tSM:{sample}\\tPL:ILLUMINA"'
+    info = get_srrun_dict(wildcards)
+    run = info["srrun"]
+    sample = info["samplename"]
+    rg = f'-R "@RG\\tID:{run}\\tSM:{sample}\\tPL:ILLUMINA"'
     return rg
+
+
+def get_roi_read_group(wildcards):
+    info = get_srrun_dict(wildcards)
+    run = info["srrun"]
+    sample = info["sample"]
+    rg = f'-R "@RG\\tID:{run}\\tSM:{sample}\\tPL:ILLUMINA"'
+    return rg
+
+
+def get_srrun_dict(wildcards):
+    srrun = wildcards.srrun
+    samplename = sampleinfo[sampleinfo["Run"] == srrun].SampleName.values[0]
+    sample = sampleinfo[sampleinfo["Run"] == srrun].SampleAlias.values[0]
+
+    info = {'srrun': srrun, 'samplename': samplename, 'sample': sample}
+    return info
+
+
+def get_sequence_fai(wildcards):
+    if wildcards.roi == "":
+        path = config["reference"]
+    else:
+        path = os.path.join(wildcards.roi, config["reference"])
+    return path + ".fai"
+
+
+def get_sequence_dictionary(wildcards):
+    if wildcards.roi == "":
+        path = config["reference"]
+    else:
+        path = os.path.join(wildcards.roi, config["reference"])
+    return re.sub(".fasta$", ".dict", path)
+
+
+def subset_bam_for_roi_input(wildcards, *, ext=""):
+    srsamplename = sampleinfo[sampleinfo["SampleAlias"] == wildcards.samplealias].SampleName.values[0]
+    return f"{srsamplename}/{wildcards.srrun}.sort.md.bam{ext}"
 
 
 def gatk_raw_or_bqsr_variant_filtration_options(wildcards):
@@ -34,29 +73,29 @@ def make_roi_save_script_input(wildcards):
     data = [os.path.join(wildcards.roi, "allsites.vcf.gz")]
     if roi["ubam"]:
         data.extend(
-            expand(f"{wildcards.roi}/{{srrid}}/{{srrid}}.{{sampleid}}.unmapped.bam",
+            expand(f"{wildcards.roi}/{{srrun}}/{{srrun}}.{{samplealias}}.unmapped.bam",
                    zip,
-                   srrid=sraruninfo.Run.values,
-                   sampleid=sraruninfo.SampleName.values)
+                   srrun=sampleinfo.Run.values,
+                   samplealias=sampleinfo.SampleAlias.values)
         )
         data.extend(
-            expand(f"{wildcards.roi}/{{srrid}}/{{srrid}}.{{sampleid}}.unmapped.bam.bai",
+            expand(f"{wildcards.roi}/{{srrun}}/{{srrun}}.{{samplealias}}.unmapped.bam.bai",
                    zip,
-                   srrid=sraruninfo.Run.values,
-                   sampleid=sraruninfo.SampleName.values)
+                   srrun=sampleinfo.Run.values,
+                   samplealias=sampleinfo.SampleAlias.values)
         )
     if roi["fastq"]:
         data.extend(
-            expand(f"{wildcards.roi}/{{srrid}}/{{srrid}}.{{sampleid}}_R1.fastq.gz",
+            expand(f"{wildcards.roi}/{{srrun}}/{{srrun}}.{{samplealias}}_R1.fastq.gz",
                    zip,
-                   srrid=sraruninfo.Run.values,
-                   sampleid=sraruninfo.SampleName.values)
+                   srrun=sampleinfo.Run.values,
+                   samplealias=sampleinfo.SampleAlias.values)
         )
         data.extend(
-            expand(f"{wildcards.roi}/{{srrid}}/{{srrid}}.{{sampleid}}_R2.fastq.gz",
+            expand(f"{wildcards.roi}/{{srrun}}/{{srrun}}.{{samplealias}}_R2.fastq.gz",
                    zip,
-                   srrid=sraruninfo.Run.values,
-                   sampleid=sraruninfo.SampleName.values)
+                   srrun=sampleinfo.Run.values,
+                   samplealias=sampleinfo.SampleAlias.values)
         )
     if roi["reference"]:
         data.append(os.path.join(wildcards.roi, config["reference"]))
@@ -64,23 +103,12 @@ def make_roi_save_script_input(wildcards):
 
 
 def gatk_combine_gvcfs_input(wildcards):
-    yellow = ["PUN-BCRD11-2016", "PUN-INJ10-2016", "PUN-LO4-2016",
-              "PUN-PCT7-2016", "PUN-POTR15-2016"]
-    red = ["PUN-ELF11-2016", "PUN-JMC19-2016", "PUN-LH19-2016",
-           "PUN-MT10-2016", "PUN-UCSD13-2016"]
-
-
     fmt = (
-        f"{wildcards.roi}{wildcards.sep}{{sampleid}}/{{srrid}}"
+        f"{wildcards.roi}{wildcards.sep}{{samplealias}}/{{srrun}}"
         ".sort.dup.recal.hc.g.vcf.gz"
     )
-    if wildcards.label == "":
-        vcf = expand(fmt, zip, sampleid=sraruninfo.SampleName.values,
-                     srrid=sraruninfo.Run.values)
-    elif wildcards.label == "redyellow.":
-        i = sraruninfo.ScientificName.str.find("puniceus") > 0
-        df = sraruninfo[i]
-        vcf = expand(fmt, zip, sampleid=df.SampleName.values,
-                     srrid=df.Run.values)
+    vcf = expand(fmt, zip,
+                 samplealias=sampleinfo.SampleAlias.values,
+                 srrun=sampleinfo.Run.values)
     return vcf
 
