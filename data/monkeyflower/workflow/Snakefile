@@ -841,3 +841,5 @@ rule make_roi_save_script:
 
 
 ruleorder: make_ubam_for_roi > samtools_index_bam
+
+localrules: download_sraruninfo
