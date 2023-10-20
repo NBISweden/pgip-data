@@ -178,6 +178,7 @@ if "output" in config.keys():
                               zip, \
                               srrun=sampleinfo.Run.values, \
                               samplealias=sampleinfo.SampleAlias.values))
+        results.append(f"{roi}/multiqc_report.html")
         all_results[key] = results
 
 
@@ -623,7 +624,7 @@ rule picard_mark_duplicates:
     """Mark duplicates with picard"""
     output:
         bam="{roi}/{samplealias}/{srrun}.sort.dup.bam",
-        metrics="{roi}/{samplealias}/{srrun}.sort.dup.dup_metrics.txt",
+        metrics="{roi}/markdup/{samplealias}/{srrun}.sort.dup.dup_metrics.txt",
     input:
         bam="{roi}/{samplealias}/{srrun}.sort.bam",
     conda: "envs/environment.yml",
@@ -755,6 +756,59 @@ rule gatk_genotype_gvcfs:
     shell:
         """
         gatk GenotypeGVCFs -OVI true -R {input.ref} -V {input.vcf} -O {output.vcf} --all-sites > {log} 2>&1
+        """
+
+##############################
+# Quality control
+##############################
+rule fastqc:
+    """FastQC"""
+    output:
+        txt="{roi}/fastqc/{samplealias}/{srrun}_{read}_fastqc/summary.txt",
+    input:
+        fastq="{roi}/{samplealias}/{srrun}_{read}.fastq.gz",
+    wildcard_constraints:
+        read="(R1|R2)"
+    conda: "envs/environment.yml"
+    benchmark: "benchmarks/fastqc/{roi}/{samplealias}/{srrun}_{read}.fastq.gz.html.benchmark.txt",
+    log: "logs/fastqc/{roi}/{samplealias}/{srrun}_{read}.fastq.gz.html.log",
+    threads: 1
+    shell:
+        """
+        mkdir -p {wildcards.roi}/fastqc/{wildcards.samplealias}
+        fastqc --extract -o {wildcards.roi}/fastqc/{wildcards.samplealias} {input.fastq} > {log} 2>&1
+        """
+
+
+rule qualimap_bamqc:
+    """Run qualimap bamqc on bam files"""
+    output:
+        txt = "{roi}/qualimap/{prefix}_stats/genome_results.txt",
+    input:
+        bam = "{roi}/{prefix}.bam",
+    conda: "envs/environment.yml"
+    benchmark: "benchmarks/qualimap_bamqc/{roi}/{prefix}_stats/genome_results.txt.benchmark.txt",
+    log: "logs/qualimap_bamqc/{roi}/{prefix}_stats/genome_results.txt.log",
+    threads: 1
+    shell:
+        """
+        qualimap bamqc -bam {input.bam} -outdir {wildcards.roi}/qualimap/{wildcards.prefix}_stats > {log} 2>&1
+        """
+
+
+rule multiqc_roi:
+    """Make multiqc report for roi"""
+    output:
+        html="{roi}/multiqc_report.html",
+    input:
+        multiqc_roi_input,
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/multiqc_roi/{roi}/multiqc_report.html.benchmark.txt",
+    log: "logs/multiqc_roi/{roi}/multiqc_report.html.log",
+    threads: 1
+    shell:
+        """
+        multiqc -f {wildcards.roi} --outdir {wildcards.roi} > {log} 2>&1
         """
 
 ##############################
