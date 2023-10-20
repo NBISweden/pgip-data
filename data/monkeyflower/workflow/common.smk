@@ -1,4 +1,5 @@
 import re
+import itertools
 
 def get_read_group(wildcards):
     info = get_srrun_dict(wildcards)
@@ -112,3 +113,20 @@ def gatk_combine_gvcfs_input(wildcards):
                  srrun=sampleinfo.Run.values)
     return vcf
 
+
+def multiqc_roi_input(wildcards):
+    def _expand_fmt(fmt, qc):
+        fmt = fmt.format(qc=qc)
+        return expand(fmt, zip,
+                      samplealias=sampleinfo.SampleAlias.values,
+                      srrun=sampleinfo.Run.values)
+
+    fmt = f"{wildcards.roi}/{{qc}}/{{{{samplealias}}}}/{{{{srrun}}}}"
+    results = dict()
+    results["fastqc"] = _expand_fmt(fmt + "_R1_fastqc/summary.txt",
+                                    "fastqc")
+    results["qualimap"] = _expand_fmt(fmt + ".sort_stats/genome_results.txt",
+                                      "qualimap")
+    results["markdups"] = _expand_fmt(fmt + ".sort.dup.dup_metrics.txt",
+                                      "markdup")
+    return itertools.chain(*results.values())
