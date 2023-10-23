@@ -16,6 +16,5 @@ dependencies:
   - samtools
   - seqtk
   - seqkit
-  - snakemake
   # sra-tools and picard are incompatible
   # - sra-tools
