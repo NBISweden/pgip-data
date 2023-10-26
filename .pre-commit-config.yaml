@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
       - id: check-merge-conflict
       - id: debug-statements
@@ -25,12 +25,12 @@ repos:
         args: [--application-directories=python,
                --unclassifiable-application-module=_tskit]
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.14.0
+    rev: v3.15.0
     hooks:
       - id: pyupgrade
         args: [--py3-plus, --py37-plus]
   - repo: https://github.com/psf/black
-    rev: 23.9.1
+    rev: 23.10.1
     hooks:
       - id: black
         language_version: python3
@@ -47,16 +47,11 @@ repos:
         args: [--skip-errors]
         additional_dependencies: [black==22.3.0]
         language_version: python3
-  # - repo: https://github.com/snakemake/snakefmt
-  #   rev: v0.8.4
-  #   hooks:
-  #     - id: snakefmt
-  # - repo: local
-  #   hooks:
-  #     - id: lint
-  #       name: Snakemake lint
-  #       entry: snakemake --lint text -s
-  #       language: system
-  #       log_file: 'snakemake-lint.txt'
-  #       exclude: 'data/ooa-outgroups/Snakefile'
-  #       files: '.*\.smk$|Snakefile'
+  - repo: local
+    hooks:
+      - id: lint
+        name: Snakemake lint monkeyflower workflow
+        entry: snakemake --lint text --directory data/monkeyflower -s
+        language: system
+        log_file: 'snakemake-monkeyflower-lint.txt'
+        files: 'data/monkeyflower/workflow/Snakefile'
