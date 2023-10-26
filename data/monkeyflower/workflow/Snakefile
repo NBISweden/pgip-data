@@ -76,28 +76,36 @@ from snakemake.remote.HTTP import RemoteProvider
 from pathlib import Path
 import logging
 
+
 configfile: "config/config.yaml"
 
+
 include: "common.smk"
+
 
 # custom.smk must set sampleinfo object
 sampleinfo = None
 try:
     include: "custom.smk"
-    custom_all=rules.custom_all.input
+    custom_all = rules.custom_all.input
 except Exception as e:
     print(e)
-    custom_all=[]
+    custom_all = []
     pass
+
 
 workdir: config["bioproject"]
 
 
 envvars:
-    "EMAIL"
+    "EMAIL",
+
+
 if "repeatlibrary" in config.keys():
+
     envvars:
-        "REPEATMASKER_LIBDIR"
+        "REPEATMASKER_LIBDIR",
+
 
 ##############################
 # Settings
@@ -111,8 +119,7 @@ if "sraruninfo" in config.keys():
 # Data sources
 datasources = dict()
 if "datasources" in config.keys():
-    datasources = dict(zip(config["datasources"].keys(),
-                           config["datasources"].values()))
+    datasources = dict(zip(config["datasources"].keys(), config["datasources"].values()))
 if "repeatlibrary" not in config.keys():
     config["repeatlibrary"] = "repeats"
 
@@ -121,7 +128,9 @@ try:
     sraruninfo = pd.read_csv("SraRunInfo.csv")
     sraruninfo["SampleAlias"] = sraruninfo.SampleName
 except Exception as e:
-    logging.error("No SraRunInfo.csv available yet! Rerun workflow once it has been downloaded")
+    logging.error(
+        "No SraRunInfo.csv available yet! Rerun workflow once it has been downloaded"
+    )
     sraruninfo = pd.DataFrame(columns=["Sample", "Run", "SampleName", "SampleAlias"])
     pass
 
@@ -134,9 +143,10 @@ NCBI = NCBIRemoteProvider(email=os.environ["EMAIL"])
 HTTP = RemoteProvider()
 
 try:
-    REPEATMASKER_DIR=os.path.dirname(os.path.realpath(shutil.which("RepeatMasker")))
+    REPEATMASKER_DIR = os.path.dirname(os.path.realpath(shutil.which("RepeatMasker")))
 except Exception as e:
     raise
+
 
 wildcard_constraints:
     roi="(|" + "|".join([x for x in config.get("output", {}).keys()]) + ")",
@@ -152,9 +162,12 @@ all_results = dict(
     datasources=list(datasources.keys()),
     custom=custom_all,
     masked=expand(f'{config["reference"]}.{{suffix}}', suffix=["masked", "out", "tbl"]),
-    srrbam=expand("{samplename}/{srrun}.sort.md.bam.bai", zip, \
-                  srrun=sampleinfo.Run.values, \
-                  samplename=sampleinfo.SampleName.values)
+    srrbam=expand(
+        "{samplealias}/{srrun}.sort.md.bam.bai",
+        zip,
+        srrun=sampleinfo.Run.values,
+        samplealias=sampleinfo.SampleAlias.values,
+    ),
 )
 
 
@@ -162,29 +175,41 @@ if "repeatlibrary" in config.keys():
     all_results["repeats"] = [f'{config["repeatlibrary"]}-families.fa']
     all_results["merged.lib"] = expand(
         f'{config["reference"]}.{config["repeatlibrary"]}.merged.{{suffix}}',
-        suffix=["masked", "out", "tbl"]
+        suffix=["masked", "out", "tbl"],
     )
 
 if "output" in config.keys():
     for roi, obj in config["output"].items():
         key = f"output.{roi}"
-        results = [os.path.join(f"{roi}", "allsites.vcf.gz.tbi"),
-                   os.path.join(f"{roi}", "save.sh")]
-        results.extend(expand(f"{roi}/{{samplealias}}/{{srrun}}_R1.fastq.gz",
-                              zip, \
-                              srrun=sampleinfo.Run.values, \
-                              samplealias=sampleinfo.SampleAlias.values))
-        results.extend(expand(f"{roi}/{{samplealias}}/{{srrun}}_R2.fastq.gz",
-                              zip, \
-                              srrun=sampleinfo.Run.values, \
-                              samplealias=sampleinfo.SampleAlias.values))
+        results = [
+            os.path.join(f"{roi}", "allsites.vcf.gz.tbi"),
+            os.path.join(f"{roi}", "save.sh"),
+        ]
+        results.extend(
+            expand(
+                f"{roi}/{{samplealias}}/{{srrun}}_R1.fastq.gz",
+                zip,
+                srrun=sampleinfo.Run.values,
+                samplealias=sampleinfo.SampleAlias.values,
+            )
+        )
+        results.extend(
+            expand(
+                f"{roi}/{{samplealias}}/{{srrun}}_R2.fastq.gz",
+                zip,
+                srrun=sampleinfo.Run.values,
+                samplealias=sampleinfo.SampleAlias.values,
+            )
+        )
         results.append(f"{roi}/multiqc_report.html")
         all_results[key] = results
 
 
 rule all:
     """Pseudo-rule for all targets"""
-    input: **all_results
+    input:
+        **all_results,
+
 
 ##############################
 # SRR module
@@ -202,12 +227,15 @@ rule download_sraruninfo:
     """
     output:
         "SraRunInfo.csv",
-    benchmark: "benchmarks/SraRunInfo.csv.benchmark.txt",
+    benchmark:
+        "benchmarks/SraRunInfo.csv.benchmark.txt"
     params:
         bioproject=config["bioproject"],
         filter2=csvtk_filter2,
-    conda: "envs/sratools.yaml",
-    log: "logs/SraRunInfo.csv.log",
+    conda:
+        "envs/sratools.yaml"
+    log:
+        "logs/SraRunInfo.csv.log",
     threads: 1
     shell:
         """
@@ -222,39 +250,56 @@ rule download_datasources:
     output:
         urltarget="{urltarget}",
     input:
-        urlsource=lambda wildcards: HTTP.remote(config.get("datasources", {}).get(wildcards.urltarget))
+        urlsource=lambda wildcards: HTTP.remote(
+            config.get("datasources", {}).get(wildcards.urltarget)
+        ),
     wildcard_constraints:
-        urltarget=f'({"|".join([str(x) for x in set(datasources.keys())])})'
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/{urltarget}.benchmark.txt",
-    log: "logs/{urltarget}.log",
+        urltarget=f'({"|".join([str(x) for x in set(datasources.keys())])})',
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/{urltarget}.benchmark.txt"
+    log:
+        "logs/{urltarget}.log",
     threads: 1
     shell:
         """
         wget {input.urlsource} -O {output.urltarget}
         """
 
+
 ##############################
 # Reference indexing
 ##############################
 rule samtools_faidx:
     """Run samtools faidx"""
-    output: "{prefix}.fasta.fai",
-    input: "{prefix}.fasta",
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/{prefix}.fasta.fai.benchmark.txt",
-    log: "logs/{prefix}.fasta.fai.log",
+    output:
+        "{prefix}.fasta.fai",
+    input:
+        "{prefix}.fasta",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/{prefix}.fasta.fai.benchmark.txt"
+    log:
+        "logs/{prefix}.fasta.fai.log",
     threads: 1
     shell:
         """samtools faidx {input}"""
 
+
 rule picard_create_sequence_dictionary:
     """Create sequence dictionary"""
-    output: "{prefix}.dict",
-    input: "{prefix}.fasta",
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/{prefix}.dict.benchmark.txt",
-    log: "logs/{prefix}.dict.log",
+    output:
+        "{prefix}.dict",
+    input:
+        "{prefix}.fasta",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/{prefix}.dict.benchmark.txt"
+    log:
+        "logs/{prefix}.dict.log",
     threads: 1
     shell:
         """picard CreateSequenceDictionary --REFERENCE {input} > {log} 2>&1"""
@@ -266,19 +311,25 @@ rule picard_create_sequence_dictionary:
 rule build_database:
     """Build repeatmasker database"""
     output:
-        lib=expand("{lib}.{sfx}", lib=config["repeatlibrary"],
-                   sfx=["nhr", "nin", "njs", "nnd",
-                        "nni", "nog", "nsq",
-                        "translation"]),
-    input: config["reference"],
-    conda: "envs/repeatmasker.yml",
-    benchmark: "benchmarks/repeats.benchmark.txt",
-    log: "logs/repeats.builddatabase.log",
+        lib=expand(
+            "{lib}.{sfx}",
+            lib=config["repeatlibrary"],
+            sfx=["nhr", "nin", "njs", "nnd", "nni", "nog", "nsq", "translation"],
+        ),
+    input:
+        config["reference"],
+    conda:
+        "envs/repeatmasker.yml"
+    benchmark:
+        "benchmarks/repeats.benchmark.txt"
+    log:
+        "logs/repeats.builddatabase.log",
     threads: 1
     shell:
         """
         BuildDatabase -name {output} -engine ncbi {input} > {log} 2>&1
         """
+
 
 rule repeat_modeler:
     """Run repeatmodeler"""
@@ -286,19 +337,23 @@ rule repeat_modeler:
         fa="{lib}-families.fa",
         stk="{lib}-families.stk",
     input:
-        lib="{lib}.nhr"
+        lib="{lib}.nhr",
     wildcard_constraints:
-        lib=config["repeatlibrary"]
+        lib=config["repeatlibrary"],
     params:
         lib=config["repeatlibrary"],
-    conda: "envs/repeatmasker.yml",
-    benchmark: "benchmarks/repeat_modeler.{lib}.benchmark.txt"
-    log: "logs/repeat_modeler.{lib}.log"
+    conda:
+        "envs/repeatmasker.yml"
+    benchmark:
+        "benchmarks/repeat_modeler.{lib}.benchmark.txt"
+    log:
+        "logs/repeat_modeler.{lib}.log",
     threads: 12
     shell:
         """
         RepeatModeler -database {params.lib} -threads {threads} > {log} 2>&1
         """
+
 
 rule repeat_masker_get_dfam_curated:
     """Install dfam_curated library
@@ -312,22 +367,27 @@ rule repeat_masker_get_dfam_curated:
         wget https://www.dfam.org/releases/Dfam_3.7/families/Dfam_curatedonly.h5.gz -O $(dirname $(readlink -f $(which RepeatMasker)))
     """
     output:
-        h5="Libraries/Dfam.h5"
+        h5="Libraries/Dfam.h5",
     input:
-        dfam_curated=HTTP.remote("https://www.dfam.org/releases/Dfam_3.7/families/Dfam_curatedonly.h5.gz")
+        dfam_curated=HTTP.remote(
+            "https://www.dfam.org/releases/Dfam_3.7/families/Dfam_curatedonly.h5.gz"
+        ),
     params:
         dfam="Libraries/dfam_curated.h5.gz",
-        h5="Libraries/Dfam.h5",
-    conda: "envs/repeatmasker.yml",
-    benchmark: "benchmarks/repeat_masker/dfam_curated.benchmark.txt"
-    log: "logs/repeat_masker/dfam_curated.log"
+    conda:
+        "envs/repeatmasker.yml"
+    benchmark:
+        "benchmarks/repeat_masker/dfam_curated.benchmark.txt"
+    log:
+        "logs/repeat_masker/dfam_curated.log",
     threads: 1
     shell:
         """
         wget {input.dfam_curated} -O {params.dfam} > {log} 2>&1
         gzip -dv {params.dfam} >> {log} 2>&1
-        mv {params.dfam} {params.h5}
+        mv {params.dfam} {output.h5}
         """
+
 
 rule repeat_masker:
     """Run repeatmasker on reference with generic repeat library.
@@ -338,25 +398,29 @@ rule repeat_masker:
         tbl=f'{config["reference"]}.tbl',
     input:
         ref=config["reference"],
-        dfam="Libraries/Dfam.h5",
+        dfam=repeat_masker_dfam,
     params:
         species=config.get("species", "nn"),
-        libdir=os.environ.get("REPEATMASKER_LIBDIR")
-    conda: "envs/repeatmasker.yml",
-    benchmark: "benchmarks/repeat_masker/masked.fasta.benchmark.txt",
-    log: "logs/repeat_masker/masked.fasta.log",
+        libdir=os.environ.get("REPEATMASKER_LIBDIR"),
+    conda:
+        "envs/repeatmasker.yml"
+    benchmark:
+        "benchmarks/repeat_masker/masked.fasta.benchmark.txt"
+    log:
+        "logs/repeat_masker/masked.fasta.log",
     threads: 14
     shell:
         """
         RepeatMasker -libdir Libraries -libdir {params.libdir}  -species "{params.species}" -gff -pa {threads} -a -xsmall {input.ref} > {log} 2>&1
         """
 
+
 rule repeat_masker_custom:
     """Run repeatmasker on reference with custom repeat library"""
     output:
         fasta=f'{config["reference"]}.{{lib}}.masked',
         out=f'{config["reference"]}.{{lib}}.out',
-        tbl=f'{config["reference"]}.{{lib}}.tbl'
+        tbl=f'{config["reference"]}.{{lib}}.tbl',
     input:
         ref=f'{config["reference"]}.masked',
         lib="{lib}-families.fa",
@@ -365,9 +429,12 @@ rule repeat_masker_custom:
     params:
         species=config.get("species", "nn"),
         ref={config["reference"]},
-    conda: "envs/repeatmasker.yml",
-    benchmark: "benchmarks/repeat_masker/{lib}.masked.fasta.benchmark.txt",
-    log: "logs/repeat_masker/{lib}.masked.fasta.log",
+    conda:
+        "envs/repeatmasker.yml"
+    benchmark:
+        "benchmarks/repeat_masker/{lib}.masked.fasta.benchmark.txt"
+    log:
+        "logs/repeat_masker/{lib}.masked.fasta.log",
     threads: 14
     shell:
         """
@@ -375,54 +442,69 @@ rule repeat_masker_custom:
         rename "s/{params.ref}.masked/{params.ref}.{wildcards.lib}/g" {input.ref}.*
         """
 
+
 rule repeat_masker_combine:
     """Combine repeatmasker outputs"""
     output:
         out=f'{config["reference"]}.{{lib}}.merged.{{suffix}}',
     input:
         custom=f'{config["reference"]}.{{lib}}.{{suffix}}',
-        rm=f'{config["reference"]}.{{suffix}}'
+        rm=f'{config["reference"]}.{{suffix}}',
     wildcard_constraints:
-        suffix = "(out|tbl|masked)"
-    conda: "envs/repeatmasker.yml",
-    benchmark: "benchmarks/repeat_masker/{lib}.merged.{suffix}.benchmark.txt",
-    log: "logs/repeat_masker/{lib}.merged.{suffix}.log",
+        suffix="(out|tbl|masked)",
+    conda:
+        "envs/repeatmasker.yml"
+    benchmark:
+        "benchmarks/repeat_masker/{lib}.merged.{suffix}.benchmark.txt"
+    log:
+        "logs/repeat_masker/{lib}.merged.{suffix}.log",
     threads: 1
     shell:
         """
         cat {input.rm} {input.custom} > {output.out}
         """
 
+
 ##############################
 # Mapping
 ##############################
-BWA_INDEX_SUFFIX=["amb", "ann", "bwt", "pac", "sa"]
+BWA_INDEX_SUFFIX = ["amb", "ann", "bwt", "pac", "sa"]
+
+
 rule bwa_index:
     """Create bwa index for input file"""
     output:
-        index=expand("{{prefix}}.fasta.{suffix}", suffix=BWA_INDEX_SUFFIX)
+        index=expand("{{prefix}}.fasta.{suffix}", suffix=BWA_INDEX_SUFFIX),
     input:
         fasta="{prefix}.fasta",
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/{prefix}.fasta.bwa_index.benchmark.txt",
-    log: "logs/{prefix}.fasta.bwa_index.log",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/{prefix}.fasta.bwa_index.benchmark.txt"
+    log:
+        "logs/{prefix}.fasta.bwa_index.log",
     threads: 1
     shell:
         """bwa index {input.fasta} > {log} 2>&1"""
+
 
 rule sra_prefetch:
     """Prefetch sra record. Note that output name is determined by
     prefetch."""
     output:
         srrun=temp("{srrun}/{srrun}.sra"),
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/sra_prefetch/{srrun}.benchmark.txt",
-    log: "logs/sra_prefetch/{srrun}.log",
+    conda:
+        "envs/sratools.yaml"
+    benchmark:
+        "benchmarks/sra_prefetch/{srrun}.benchmark.txt"
+    log:
+        "logs/sra_prefetch/{srrun}.log",
     threads: 1
     shell:
         """
-        prefetch -p {output.srrun} > {log} 2>&1
+        prefetch {wildcards.srrun} -p > {log} 2>&1
         """
+
 
 rule bwa_mem_srrinput:
     """Map SRR data on the fly and convert to bam.
@@ -430,18 +512,22 @@ rule bwa_mem_srrinput:
     NB: This will use the SampleName column to identify the sample
     (not the SRS id)."""
     output:
-        bam="{samplename}/{srrun}.sort.md.bam",
+        bam=temp("{samplealias}/{srrun}.sort.md.bam"),
     input:
         srr="{srrun}/{srrun}.sra",
         reference=config["reference"],
         index=expand("{ref}.{sfx}", ref=config["reference"], sfx=BWA_INDEX_SUFFIX),
     params:
         rg=get_read_group,
-        options="-M"
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/{samplename}/{srrun}.sort.md.bam.benchmark.txt",
-    log: "logs/{samplename}/{srrun}.sort.md.bam.log",
+        options="-M",
+    conda:
+        "envs/bwamem.yaml"
+    benchmark:
+        "benchmarks/{samplealias}/{srrun}.sort.md.bam.benchmark.txt"
+    log:
+        "logs/{samplealias}/{srrun}.sort.md.bam.log",
     threads: 14
+    priority: 10
     shell:
         """
         fasterq-dump --skip-technical -Z --split-spot {input.srr} |
@@ -451,21 +537,29 @@ rule bwa_mem_srrinput:
             samtools view -h -b -o {output.bam} 2> {log}
         """
 
+
 rule bwa_mem_ubam_to_roi:
     """Map ubam file to roi"""
     output:
         bam="{roi}/{samplealias}/{srrun}.sort.bam",
     input:
-        reference=os.path.join("{roi}", config['reference']),
-        index=expand(os.path.join("{{roi}}", "{ref}.{sfx}"), ref=config["reference"], sfx=BWA_INDEX_SUFFIX),
+        reference=os.path.join("{roi}", config["reference"]),
+        index=expand(
+            os.path.join("{{roi}}", "{ref}.{sfx}"),
+            ref=config["reference"],
+            sfx=BWA_INDEX_SUFFIX,
+        ),
         bam="{roi}/{samplealias}/{srrun}.unmapped.bam",
         bai="{roi}/{samplealias}/{srrun}.unmapped.bam.bai",
     params:
         rg=get_roi_read_group,
-        options="-M"
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/bwa_mem_roi/{roi}/{samplealias}/{srrun}.bam.benchmark.txt",
-    log: "logs/bwa_mem_roi/{roi}/{samplealias}/{srrun}.bam.log",
+        options="-M",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/bwa_mem_roi/{roi}/{samplealias}/{srrun}.bam.benchmark.txt"
+    log:
+        "logs/bwa_mem_roi/{roi}/{samplealias}/{srrun}.bam.log",
     threads: 14
     shell:
         """
@@ -479,11 +573,16 @@ rule bwa_mem_ubam_to_roi:
 
 rule samtools_index_bam:
     """Index bam file"""
-    output: "{roi}{sep}{samplealias}/{srrun}.{tag}.bam.bai",
-    input: "{roi}{sep}{samplealias}/{srrun}.{tag}.bam",
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/samtools_index_bam/{roi}{sep}{samplealias}/{srrun}.{tag}.bam.bai.benchmark.txt",
-    log: "logs/samtools_index_bam/{srrun}/{roi}{sep}{srrun}.{samplealias}.{tag}.bam.bai.log",
+    output:
+        "{roi}{sep}{samplealias}/{srrun}.{tag}.bam.bai",
+    input:
+        "{roi}{sep}{samplealias}/{srrun}.{tag}.bam",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/samtools_index_bam/{roi}{sep}{samplealias}/{srrun}.{tag}.bam.bai.benchmark.txt"
+    log:
+        "logs/samtools_index_bam/{srrun}/{roi}{sep}{srrun}.{samplealias}.{tag}.bam.bai.log",
     threads: 1
     shell:
         """
@@ -504,17 +603,27 @@ rule samtools_index_bam:
 ##############################
 rule make_roi_bed:
     """Make roi bedfile"""
-    output: "{roi}/{roi}.bed",
+    output:
+        "{roi}/{roi}.bed",
     params:
-        roi = lambda wildcards: "\n".join(["\t".join(re.split(":|-", x)) for x in config["output"][wildcards.roi]["roi"]])
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/make_roi_bed/{roi}.bed.benchmark.txt",
-    log: "logs/make_roi_bed/{roi}.bed.log",
+        roi=lambda wildcards: "\n".join(
+            [
+                "\t".join(re.split(":|-", x))
+                for x in config["output"][wildcards.roi]["roi"]
+            ]
+        ),
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/make_roi_bed/{roi}.bed.benchmark.txt"
+    log:
+        "logs/make_roi_bed/{roi}.bed.log",
     threads: 1
     shell:
         """
         echo -e "{params.roi}" > {output}
         """
+
 
 rule subset_reference_to_roi:
     """Subset reference sequence to roi"""
@@ -523,10 +632,13 @@ rule subset_reference_to_roi:
     input:
         fasta=config["reference"],
         fai=config["reference"] + ".fai",
-        bed="{roi}/{roi}.bed"
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/subset_reference_to_roi/{roi}.benchmark.txt",
-    log: "logs/subset_reference_to_roi/{roi}.log",
+        bed="{roi}/{roi}.bed",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/subset_reference_to_roi/{roi}.benchmark.txt"
+    log:
+        "logs/subset_reference_to_roi/{roi}.log",
     threads: 1
     shell:
         """
@@ -534,23 +646,31 @@ rule subset_reference_to_roi:
         sed -r 's/>([A-Z0-9a-z]+):([0-9\-]+)/>\\1 \\1:\\2/g' > {output.fasta} 2> {log}
         """
 
+
 rule subset_bam_for_roi:
     """Subset bam file for roi"""
     output:
-        bam="{roi}/{samplealias}/{srrun}.roi.bam",
+        bam=temp("{roi}/{samplealias}/{srrun}.roi.bam"),
     input:
         bam=lambda wildcards: subset_bam_for_roi_input(wildcards),
         bai=lambda wildcards: subset_bam_for_roi_input(wildcards, ext=".bai"),
     params:
-        roi=lambda wildcards: " ".join([f'"{x}"' for x in config["output"][wildcards.roi]["roi"]])
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/subset_bam_for_roi/{roi}/{samplealias}/{srrun}.roi.bam.benchmark.txt",
-    log: "logs/subset_bam_for_roi/{roi}/{samplealias}/{srrun}.roi.bam.log",
+        roi=lambda wildcards: " ".join(
+            [f'"{x}"' for x in config["output"][wildcards.roi]["roi"]]
+        ),
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/subset_bam_for_roi/{roi}/{samplealias}/{srrun}.roi.bam.benchmark.txt"
+    log:
+        "logs/subset_bam_for_roi/{roi}/{samplealias}/{srrun}.roi.bam.log",
     threads: 1
+    priority: 200
     shell:
         """
         samtools view -P {input.bam} {params.roi} -h -b -o {output.bam} > {log} 2>&1
         """
+
 
 rule make_ubam_for_roi:
     """Make ubam file for roi using old sample name"""
@@ -558,10 +678,14 @@ rule make_ubam_for_roi:
         bam=temp("{roi}/{samplealias}/{srrun}.unmapped.samplealias.bam"),
     input:
         bam="{roi}/{samplealias}/{srrun}.roi.bam",
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/make_ubam_for_roi/{roi}/{samplealias}/{srrun}.unmapped.bam.benchmark.txt",
-    log: "logs/make_ubam_for_roi/{roi}/{samplealias}/{srrun}.unmapped.bam.log",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/make_ubam_for_roi/{roi}/{samplealias}/{srrun}.unmapped.bam.benchmark.txt"
+    log:
+        "logs/make_ubam_for_roi/{roi}/{samplealias}/{srrun}.unmapped.bam.log",
     threads: 1
+    priority: 300
     shell:
         """
         picard RevertSam --INPUT {input.bam} \
@@ -581,6 +705,7 @@ rule make_ubam_for_roi:
                    > {log} 2>&1
         """
 
+
 rule rename_ubam_sample:
     """Rename sample in ubam file"""
     output:
@@ -589,9 +714,12 @@ rule rename_ubam_sample:
         bam="{roi}/{samplealias}/{srrun}.unmapped.samplealias.bam",
     params:
         sample=lambda wildcards: get_srrun_dict(wildcards)["sample"],
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/rename_ubam_sample/{roi}/{samplealias}/{srrun}.unmapped.bam.benchmark.txt",
-    log: "logs/rename_ubam_sample/{roi}/{samplealias}/{srrun}.unmapped.bam.log",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/rename_ubam_sample/{roi}/{samplealias}/{srrun}.unmapped.bam.benchmark.txt"
+    log:
+        "logs/rename_ubam_sample/{roi}/{samplealias}/{srrun}.unmapped.bam.log",
     threads: 1
     shell:
         """
@@ -607,9 +735,12 @@ rule samtools_fastq_roi:
     input:
         bam="{roi}/{samplealias}/{srrun}.unmapped.bam",
         bai="{roi}/{samplealias}/{srrun}.unmapped.bam.bai",
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/samtools_fastq_roi/{roi}/{samplealias}/{srrun}.fastq.gz.benchmark.txt",
-    log: "logs/samtools_fastq_roi/{roi}/{samplealias}/{srrun}.fastq.gz.log",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/samtools_fastq_roi/{roi}/{samplealias}/{srrun}.fastq.gz.benchmark.txt"
+    log:
+        "logs/samtools_fastq_roi/{roi}/{samplealias}/{srrun}.fastq.gz.log",
     threads: 1
     shell:
         """
@@ -627,9 +758,12 @@ rule picard_mark_duplicates:
         metrics="{roi}/markdup/{samplealias}/{srrun}.sort.dup.dup_metrics.txt",
     input:
         bam="{roi}/{samplealias}/{srrun}.sort.bam",
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/picard_mark_duplicates/{roi}/{samplealias}/{srrun}.sort.dup.bam.benchmark.txt",
-    log: "logs/picard_mark_duplicates/{roi}/{samplealias}/{srrun}.sort.dup.bam.log",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/picard_mark_duplicates/{roi}/{samplealias}/{srrun}.sort.dup.bam.benchmark.txt"
+    log:
+        "logs/picard_mark_duplicates/{roi}/{samplealias}/{srrun}.sort.dup.bam.log",
     threads: 1
     shell:
         """
@@ -653,19 +787,33 @@ rule gatk_haplotypecaller:
         fai=get_sequence_fai,
     params:
         mode_options=lambda wildcards: "-ERC GVCF" if wildcards.mode == ".g" else "",
-        options=" ".join(["-A", "FisherStrand", "-A", "QualByDepth",
-                          "-A", "MappingQuality", "-G", "StandardAnnotation"]),
+        options=" ".join(
+            [
+                "-A",
+                "FisherStrand",
+                "-A",
+                "QualByDepth",
+                "-A",
+                "MappingQuality",
+                "-G",
+                "StandardAnnotation",
+            ]
+        ),
     wildcard_constraints:
         mode="(.g|)",
         raw="(.raw|)",
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/gatk_haplotypecaller/{roi}{sep}{samplealias}/{srrun}.{label}{raw}.hc{mode}.vcf.gz.benchmark.txt",
-    log: "logs/gatk_haplotypecaller/{roi}{sep}{samplealias}/{srrun}.{label}{raw}.hc{mode}.vcf.gz.log",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/gatk_haplotypecaller/{roi}{sep}{samplealias}/{srrun}.{label}{raw}.hc{mode}.vcf.gz.benchmark.txt"
+    log:
+        "logs/gatk_haplotypecaller/{roi}{sep}{samplealias}/{srrun}.{label}{raw}.hc{mode}.vcf.gz.log",
     threads: 1
     shell:
         """
         gatk HaplotypeCaller -OVI true {params.options} {params.mode_options} --input {input.bam} --output {output.vcf} --reference {input.ref} > {log} 2>&1
         """
+
 
 rule gatk_raw_or_bqsr_variant_filtration:
     """Filter raw or bqsr variants"""
@@ -675,17 +823,21 @@ rule gatk_raw_or_bqsr_variant_filtration:
     input:
         vcf="{roi}{sep}{samplealias}/{srrun}.{label}{raw}.hc{mode}.vcf.gz",
     wildcard_constraints:
-        raw="(.raw|.bqsr)"
+        raw="(.raw|.bqsr)",
     params:
         options=gatk_raw_or_bqsr_variant_filtration_options,
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/gatk_raw_variant_filtration/{roi}{sep}{samplealias}/{srrun}.{label}{raw}.hc{mode}.filter.vcf.gz.benchmark.txt",
-    log: "logs/gatk_raw_variant_filtration/{roi}{sep}{samplealias}/{srrun}.{label}{raw}.hc{mode}.filter.vcf.gz.log",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/gatk_raw_variant_filtration/{roi}{sep}{samplealias}/{srrun}.{label}{raw}.hc{mode}.filter.vcf.gz.benchmark.txt"
+    log:
+        "logs/gatk_raw_variant_filtration/{roi}{sep}{samplealias}/{srrun}.{label}{raw}.hc{mode}.filter.vcf.gz.log",
     threads: 1
     shell:
         """
         gatk VariantFiltration -OVI true --variant {input.vcf} --output {output.vcf} {params.options} > {log} 2>&1
         """
+
 
 rule gatk_base_recalibrator:
     """Recalibrate bases using raw variant calls as known sites"""
@@ -694,15 +846,19 @@ rule gatk_base_recalibrator:
     input:
         bam="{roi}{sep}{samplealias}/{srrun}.{label}.bam",
         known="{roi}{sep}{samplealias}/{srrun}.{label}.raw.hc.g.filtered.vcf.gz",
-        ref=os.path.join("{roi}", config["reference"])
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/gatk_base_recalibrator/{roi}{sep}{samplealias}/{srrun}.{label}.recal.bam.benchmark.txt",
-    log: "logs/gatk_base_recalibrator/{roi}{sep}{samplealias}/{srrun}.{label}.recal.bam.log",
+        ref=os.path.join("{roi}", config["reference"]),
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/gatk_base_recalibrator/{roi}{sep}{samplealias}/{srrun}.{label}.recal.bam.benchmark.txt"
+    log:
+        "logs/gatk_base_recalibrator/{roi}{sep}{samplealias}/{srrun}.{label}.recal.bam.log",
     threads: 1
     shell:
         """
         gatk BaseRecalibrator -I {input.bam} -R {input.ref} --known-sites {input.known} -O {output.table} > {log} 2>&1
         """
+
 
 rule gatk_apply_bqsr:
     """Apply BQSR on input bam"""
@@ -712,9 +868,12 @@ rule gatk_apply_bqsr:
     input:
         table="{roi}{sep}{samplealias}/{srrun}.{label}.recal.table",
         bam="{roi}{sep}{samplealias}/{srrun}.{label}.bam",
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/gatk_bqsr/{roi}{sep}{samplealias}/{srrun}.{label}.recal.output.txt",
-    log: "logs/gatk_bqsr/{roi}{sep}{samplealias}/{srrun}.{label}.recal.log",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/gatk_bqsr/{roi}{sep}{samplealias}/{srrun}.{label}.recal.output.txt"
+    log:
+        "logs/gatk_bqsr/{roi}{sep}{samplealias}/{srrun}.{label}.recal.log",
     threads: 1
     shell:
         """
@@ -725,38 +884,46 @@ rule gatk_apply_bqsr:
 rule gatk_combine_gvcfs:
     """Run GATK CombineGVCFs"""
     output:
-        vcf = "{roi}{sep}combine.g.vcf.gz",
-        tbi = "{roi}{sep}combine.g.vcf.gz.tbi",
+        vcf="{roi}{sep}combine.g.vcf.gz",
+        tbi="{roi}{sep}combine.g.vcf.gz.tbi",
     input:
-        vcf = gatk_combine_gvcfs_input,
-        ref = os.path.join("{roi}", config["reference"])
+        vcf=gatk_combine_gvcfs_input,
+        ref=os.path.join("{roi}", config["reference"]),
     params:
-        vcf = lambda wildcards, input: " ".join([f"-V {x}" for x in input.vcf])
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/gatk_combine_gvcfs/{roi}{sep}combined.g.vcf.gz.benchmark.txt",
-    log: "logs/gatk_combine_gvcfs/{roi}{sep}combined.g.vcf.gz.log",
+        vcf=lambda wildcards, input: " ".join([f"-V {x}" for x in input.vcf]),
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/gatk_combine_gvcfs/{roi}{sep}combined.g.vcf.gz.benchmark.txt"
+    log:
+        "logs/gatk_combine_gvcfs/{roi}{sep}combined.g.vcf.gz.log",
     threads: 1
     shell:
         """
         gatk CombineGVCFs -OVI true --output {output.vcf} --reference {input.ref} {params.vcf} > {log} 2>&1
         """
 
+
 rule gatk_genotype_gvcfs:
     """GATK GenotypeGVCFs"""
     output:
-        vcf = "{roi}{sep}allsites.vcf.gz",
-        tbi = "{roi}{sep}allsites.vcf.gz.tbi",
+        vcf="{roi}{sep}allsites.vcf.gz",
+        tbi="{roi}{sep}allsites.vcf.gz.tbi",
     input:
-        vcf = "{roi}{sep}combine.g.vcf.gz",
-        ref = os.path.join("{roi}", config["reference"]),
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/gatk_genotype_gvcfs/{roi}{sep}allsites.vcf.gz.benchmark.txt",
-    log: "logs/gatk_genotype_gvcfs/{roi}{sep}allsites.log",
+        vcf="{roi}{sep}combine.g.vcf.gz",
+        ref=os.path.join("{roi}", config["reference"]),
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/gatk_genotype_gvcfs/{roi}{sep}allsites.vcf.gz.benchmark.txt"
+    log:
+        "logs/gatk_genotype_gvcfs/{roi}{sep}allsites.log",
     threads: 1
     shell:
         """
         gatk GenotypeGVCFs -OVI true -R {input.ref} -V {input.vcf} -O {output.vcf} --all-sites > {log} 2>&1
         """
+
 
 ##############################
 # Quality control
@@ -768,10 +935,13 @@ rule fastqc:
     input:
         fastq="{roi}/{samplealias}/{srrun}_{read}.fastq.gz",
     wildcard_constraints:
-        read="(R1|R2)"
-    conda: "envs/environment.yml"
-    benchmark: "benchmarks/fastqc/{roi}/{samplealias}/{srrun}_{read}.fastq.gz.html.benchmark.txt",
-    log: "logs/fastqc/{roi}/{samplealias}/{srrun}_{read}.fastq.gz.html.log",
+        read="(R1|R2)",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/fastqc/{roi}/{samplealias}/{srrun}_{read}.fastq.gz.html.benchmark.txt"
+    log:
+        "logs/fastqc/{roi}/{samplealias}/{srrun}_{read}.fastq.gz.html.log",
     threads: 1
     shell:
         """
@@ -783,16 +953,19 @@ rule fastqc:
 rule qualimap_bamqc:
     """Run qualimap bamqc on bam files"""
     output:
-        txt = "{roi}/qualimap/{prefix}_stats/genome_results.txt",
+        txt="{roi}/qualimap/{prefix}_stats/genome_results.txt",
     input:
-        bam = "{roi}/{prefix}.bam",
-    conda: "envs/environment.yml"
-    benchmark: "benchmarks/qualimap_bamqc/{roi}/{prefix}_stats/genome_results.txt.benchmark.txt",
-    log: "logs/qualimap_bamqc/{roi}/{prefix}_stats/genome_results.txt.log",
-    threads: 1
+        bam="{roi}/{prefix}.bam",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/qualimap_bamqc/{roi}/{prefix}_stats/genome_results.txt.benchmark.txt"
+    log:
+        "logs/qualimap_bamqc/{roi}/{prefix}_stats/genome_results.txt.log",
+    threads: 20
     shell:
         """
-        qualimap bamqc -bam {input.bam} -outdir {wildcards.roi}/qualimap/{wildcards.prefix}_stats > {log} 2>&1
+        unset DISPLAY; qualimap bamqc -nt {threads} -bam {input.bam} -outdir {wildcards.roi}/qualimap/{wildcards.prefix}_stats > {log} 2>&1
         """
 
 
@@ -802,14 +975,18 @@ rule multiqc_roi:
         html="{roi}/multiqc_report.html",
     input:
         multiqc_roi_input,
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/multiqc_roi/{roi}/multiqc_report.html.benchmark.txt",
-    log: "logs/multiqc_roi/{roi}/multiqc_report.html.log",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/multiqc_roi/{roi}/multiqc_report.html.benchmark.txt"
+    log:
+        "logs/multiqc_roi/{roi}/multiqc_report.html.log",
     threads: 1
     shell:
         """
         multiqc -f {wildcards.roi} --outdir {wildcards.roi} > {log} 2>&1
         """
+
 
 ##############################
 # Make save script
@@ -817,18 +994,30 @@ rule multiqc_roi:
 rule make_roi_save_script:
     """Make roi save script"""
     output:
-        sh="{roi}/save.sh"
+        sh="{roi}/save.sh",
     input:
-        lambda wildcards: os.path.join(wildcards.roi, "allsites.vcf.gz")
-    conda: "envs/environment.yml",
+        lambda wildcards: os.path.join(wildcards.roi, "allsites.vcf.gz"),
+    conda:
+        "envs/environment.yml"
     params:
-        ubam = lambda wildcards:  '--include \"*.unmapped.bam*\"' if config["output"][wildcards.roi]["ubam"] else "",
-        fastq = lambda wildcards:  '--include \"*_R[12].fastq.gz\"' if config["output"][wildcards.roi]["fastq"] else "",
-        recal_gvcf = lambda wildcards: f'--include \"*.recal.hc.g.vcf.gz*\"' if config["output"][wildcards.roi]["recal.gvcf"] else "",
-        recal_bam = lambda wildcards: f'--include \"*.recal.ba[mi]\"' if config["output"][wildcards.roi]["recal.bam"] else "",
-        reference = lambda wildcards:  f'--include \"{config["reference"]}\"' if config["output"][wildcards.roi]["reference"] else "",
-        outdir = lambda wildcards: config["output"][wildcards.roi]["relpath"]
-    log: "logs/{roi}/save.log"
+        ubam=lambda wildcards: '--include "*.unmapped.bam*"'
+        if config["output"][wildcards.roi]["ubam"]
+        else "",
+        fastq=lambda wildcards: '--include "*_R[12].fastq.gz"'
+        if config["output"][wildcards.roi]["fastq"]
+        else "",
+        recal_gvcf=lambda wildcards: f'--include "*.recal.hc.g.vcf.gz*"'
+        if config["output"][wildcards.roi]["recal.gvcf"]
+        else "",
+        recal_bam=lambda wildcards: f'--include "*.recal.ba[mi]"'
+        if config["output"][wildcards.roi]["recal.bam"]
+        else "",
+        reference=lambda wildcards: f'--include "{config["reference"]}"'
+        if config["output"][wildcards.roi]["reference"]
+        else "",
+        outdir=lambda wildcards: config["output"][wildcards.roi]["relpath"],
+    log:
+        "logs/{roi}/save.log",
     threads: 1
     shell:
         """
@@ -842,4 +1031,6 @@ rule make_roi_save_script:
 
 ruleorder: make_ubam_for_roi > samtools_index_bam
 
-localrules: download_sraruninfo
+
+localrules:
+    download_sraruninfo,
