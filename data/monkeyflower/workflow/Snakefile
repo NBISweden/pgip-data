@@ -162,12 +162,18 @@ all_results = dict(
     datasources=list(datasources.keys()),
     custom=custom_all,
     masked=expand(f'{config["reference"]}.{{suffix}}', suffix=["masked", "out", "tbl"]),
+<<<<<<< HEAD
     srrbam=expand(
         "{samplealias}/{srrun}.sort.md.bam.bai",
         zip,
         srrun=sampleinfo.Run.values,
         samplealias=sampleinfo.SampleAlias.values,
     ),
+=======
+    srrbam=expand("{samplealias}/{srrun}.sort.md.bam.bai", zip, \
+                  srrun=sampleinfo.Run.values, \
+                  samplealias=sampleinfo.SampleAlias.values)
+>>>>>>> origin/monkeyflower
 )
 
 
@@ -512,7 +518,11 @@ rule bwa_mem_srrinput:
     NB: This will use the SampleName column to identify the sample
     (not the SRS id)."""
     output:
+<<<<<<< HEAD
         bam=temp("{samplealias}/{srrun}.sort.md.bam"),
+=======
+        bam="{samplealias}/{srrun}.sort.md.bam",
+>>>>>>> origin/monkeyflower
     input:
         srr="{srrun}/{srrun}.sra",
         reference=config["reference"],
@@ -583,6 +593,19 @@ rule samtools_index_bam:
         "benchmarks/samtools_index_bam/{roi}{sep}{samplealias}/{srrun}.{tag}.bam.bai.benchmark.txt"
     log:
         "logs/samtools_index_bam/{srrun}/{roi}{sep}{srrun}.{samplealias}.{tag}.bam.bai.log",
+    threads: 1
+    shell:
+        """
+        samtools index {input} > {log} 2>&1
+        """
+
+rule samtools_index_srr_bam:
+    """Index SRR bam file"""
+    output: "{samplealias}/{srrun}.sort.md.bam.bai",
+    input: "{samplealias}/{srrun}.sort.md.bam",
+    conda: "envs/environment.yml",
+    benchmark: "benchmarks/samtools_index_srr_bam/{samplealias}/{srrun}.bam.bai.benchmark.txt",
+    log: "logs/samtools_index_srr_bam/{samplealias}/{srrun}.bam.bai.log",
     threads: 1
     shell:
         """
