@@ -1,6 +1,30 @@
 import re
 import itertools
 
+VCFTOOLS_STATS = {
+    "het": "het",
+    "idepth": "depth",
+    "ldepth": "site-depth",
+    "lqual": "site-quality",
+    "frq": "freq2",
+    "imiss": "missing-indv",
+    "lmiss": "missing-site",
+}
+
+
+def make_roi_bed_roi(wildcards):
+    res = str()
+    try:
+        res = "\n".join(
+            [
+                "\t".join(re.split(":|-", x))
+                for x in config["output"][wildcards.roi]["roi"]
+            ]
+        )
+    except:
+        pass
+    return res
+
 
 def get_read_group(wildcards):
     info = get_srrun_dict(wildcards)
@@ -132,9 +156,15 @@ def gatk_combine_gvcfs_input(wildcards):
         f"{wildcards.roi}{wildcards.sep}{{samplealias}}/{{srrun}}"
         ".sort.dup.recal.hc.g.vcf.gz"
     )
-    vcf = expand(
-        fmt, zip, samplealias=sampleinfo.SampleAlias.values, srrun=sampleinfo.Run.values
-    )
+    try:
+        samples = config["output"][wildcards.roi]["callset"][
+            wildcards.callset.rstrip(".")
+        ]["samples"]
+        info = sampleinfo[sampleinfo.SampleAlias.isin(samples)]
+    except:
+        info = sampleinfo
+        raise
+    vcf = expand(fmt, zip, samplealias=info.SampleAlias.values, srrun=info.Run.values)
     return vcf
 
 
@@ -155,6 +185,10 @@ def multiqc_roi_input(wildcards):
         f"{fmt}.sort_stats/genome_results.txt", "qualimap"
     )
     results["markdups"] = _expand_fmt(f"{fmt}.sort.dup.dup_metrics.txt", "markdup")
+    fmt = f"{wildcards.roi}/vcftools/allsites.{{stat}}"
+    results["vcftools"] = expand(fmt, stat=VCFTOOLS_STATS.keys())
+    if len(custom_all) != 0:
+        results["vcftools.custom"] = custom_multiqc_roi_input(wildcards)
     return itertools.chain(*results.values())
 
 
@@ -164,3 +198,94 @@ def repeat_masker_dfam(wildcards):
     if os.path.exists(dfam):
         return dfam
     return default
+
+
+def vcftools_stats(wildcards):
+    return f"--{VCFTOOLS_STATS[wildcards.stat]}"
+
+
+def vcftools_stats_options(wildcards):
+    default = ""
+    options = {
+        "frq": "--max-alleles 2",
+    }
+    if wildcards.stat not in options.keys():
+        return default
+    return options[wildcards.stat]
+
+
+def csvtk_compile_vcftools_stats_options(wildcards):
+    d = {
+        "idepth": "-f MEAN_DEPTH:mean",
+        "ldepth": "-f 3:min,3:q1,3:median,3:mean,3:q3,3:max",
+        "lqual": "-f QUAL:min,QUAL:q1,QUAL:median,QUAL:mean,QUAL:q3,QUAL:max",
+        "lmiss": "-f 6:min,6:q1,6:median,6:mean,6:q3,6:max",
+    }
+    if wildcards.stat not in d.keys():
+        return "-f 1"
+    return d[wildcards.stat]
+
+
+def csvtk_plot_vcftools_stats(wildcards):
+    if wildcards.stat == "ldepth":
+        cmd = [
+            "csvtk summary -t -g SUM_DEPTH -f POS:count -w 0",
+            "csvtk sort -t -k 1:n",
+            'csvtk plot line -t - -x SUM_DEPTH -y POS:count --point-size 0.01 --xlab "Depth of coverage (X)" --ylab "Genome coverage (bp)" --width 9.0 --height 3.5',
+        ]
+    elif wildcards.stat == "lqual":
+        cmd = [
+            'csvtk filter -t -f "QUAL>0" -f "QUAL<1000"',
+            "csvtk summary -t -g QUAL -f POS:count -w 0 -",
+            "csvtk sort -t -k 1:n",
+            'csvtk plot hist -t --bins 100 - --xlab "Quality value" --ylab "Count" --width 9.0 --height 3.5',
+        ]
+    elif wildcards.stat == "frq":
+        cmd = [
+            "csvtk fix -t -T",
+            'csvtk filter -t -f "{FREQ}!=0" -f "{FREQ}!=1" -',
+            'csvtk mutate2 -t -n maf -e \'${5} > ${6} ? "${6}" : "${5}" \' -',
+            'csvtk plot hist -t --bins 20 -f maf - --xlab "Minor allele frequency" --ylab "Count" --width 9.0 --height 3.5',
+        ]
+    elif wildcards.stat == "imiss":
+        cmd = ["csvtk plot hist -t --x-min 0 -f F_MISS"]
+    elif wildcards.stat == "lmiss":
+        cmd = ["csvtk plot hist --bins 20 -t -f F_MISS"]
+    elif wildcards.stat == "het":
+        cmd = ["csvtk plot hist --bins 20 -t -f F"]
+    elif wildcards.stat == "idepth":
+        cmd = ["csvtk plot hist --bins 20 -t -f MEAN_DEPTH"]
+
+    return "|".join(cmd)
+
+
+def csvtk_plot_vcftools_stats_options(wildcards):
+    res = str()
+    try:
+        callset_sites = f"{wildcards.callset}.{wildcards.sites}"
+        res = config["output"][wildcards.roi]["plot"][callset_sites][wildcards.stat]
+    except KeyError as e:
+        pass
+    return res
+
+
+def vcftools_filter_options(wildcards):
+    options = []
+    try:
+        callset_sites = f"{wildcards.callset}.{wildcards.sites}"
+        obj = config["output"][wildcards.roi]["filter"][callset_sites]
+    except KeyError as e:
+        return options
+    if "miss" in obj.keys():
+        options.append(f"--max-missing {obj['miss']}")
+    if "qual" in obj.keys():
+        options.append(f"--minQ {obj['qual']}")
+    if "min_depth" in obj.keys():
+        options.append(f"--min-meanDP {obj['min_depth']}")
+        options.append(f"--minDP {obj['min_depth']}")
+    if "max_depth" in obj.keys():
+        options.append(f"--max-meanDP {obj['max_depth']}")
+        options.append(f"--maxDP {obj['max_depth']}")
+    if "options" in obj.keys():
+        options.append(obj["options"])
+    return " ".join(options)

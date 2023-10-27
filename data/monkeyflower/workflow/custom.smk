@@ -11,10 +11,8 @@ except Exception as e:
     )
     pass
 
+
 results = ["sampleinfo.csv"]
-if "output" in config.keys():
-    for roi, obj in config["output"].items():
-        results.append(os.path.join(f"{roi}", "redyellow.allsites.vcf.gz.tbi"))
 
 
 rule custom_all:
@@ -50,52 +48,4 @@ rule make_sampleinfo:
         csvtk replace -f SampleAlias -p "PUN-(ELF|JMC|LH|MT|UCSD)" -r "PUN-R-\$1" > sraruninfo.csv
 
         csvtk join sraruninfo.csv samples.csv -f "AuthorSample;Sample" > sampleinfo.csv
-        """
-
-
-rule custom_gatk_combine_gvcfs:
-    """Run GATK CombineGVCFs"""
-    output:
-        vcf="{roi}{sep}{label}combine.g.vcf.gz",
-        tbi="{roi}{sep}{label}combine.g.vcf.gz.tbi",
-    input:
-        vcf=custom_gatk_combine_gvcfs_input,
-        ref=os.path.join("{roi}", config["reference"]),
-    wildcard_constraints:
-        label="(redyellow.)",
-    params:
-        vcf=lambda wildcards, input: " ".join([f"-V {x}" for x in input.vcf]),
-    conda:
-        "envs/environment.yml"
-    benchmark:
-        "benchmarks/gatk_combine_gvcfs/{roi}{sep}{label}combined.g.vcf.gz.benchmark.txt"
-    log:
-        "logs/gatk_combine_gvcfs/{roi}{sep}{label}combined.g.vcf.gz.log",
-    threads: 1
-    shell:
-        """
-        gatk CombineGVCFs -OVI true --output {output.vcf} --reference {input.ref} {params.vcf} > {log} 2>&1
-        """
-
-
-rule custom_gatk_genotype_gvcfs:
-    """GATK GenotypeGVCFs"""
-    output:
-        vcf="{roi}{sep}{label}allsites.vcf.gz",
-        tbi="{roi}{sep}{label}allsites.vcf.gz.tbi",
-    input:
-        vcf="{roi}{sep}{label}combine.g.vcf.gz",
-        ref=os.path.join("{roi}", config["reference"]),
-    wildcard_constraints:
-        label="(redyellow.)",
-    conda:
-        "envs/environment.yml"
-    benchmark:
-        "benchmarks/gatk_genotype_gvcfs/{roi}{sep}{label}allsites.vcf.gz.benchmark.txt"
-    log:
-        "logs/gatk_genotype_gvcfs/{roi}{sep}{label}allsites.log",
-    threads: 1
-    shell:
-        """
-        gatk GenotypeGVCFs -OVI true -R {input.ref} -V {input.vcf} -O {output.vcf} --all-sites > {log} 2>&1
         """
