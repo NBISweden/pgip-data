@@ -149,12 +149,15 @@ except Exception as e:
 
 
 wildcard_constraints:
+    callset="all",
     roi="(|" + "|".join([x for x in config.get("output", {}).keys()]) + ")",
     sep="(|/)",
+    samplealias="(" + "|".join(sampleinfo.SampleAlias.values) + ")",
+    samplename="(" + "|".join(sampleinfo.SampleName.values) + ")",
+    sites="(allsites|variantsites)",
     srrun="(" + "|".join(sampleinfo.Run.values) + ")",
     srsample="(" + "|".join(sampleinfo.Sample.values) + ")",
-    samplename="(" + "|".join(sampleinfo.SampleName.values) + ")",
-    samplealias="(" + "|".join(sampleinfo.SampleAlias.values) + ")",
+    stat="(" + "|".join(VCFTOOLS_STATS.keys()) + ")",
 
 
 all_results = dict(
@@ -162,18 +165,6 @@ all_results = dict(
     datasources=list(datasources.keys()),
     custom=custom_all,
     masked=expand(f'{config["reference"]}.{{suffix}}', suffix=["masked", "out", "tbl"]),
-<<<<<<< HEAD
-    srrbam=expand(
-        "{samplealias}/{srrun}.sort.md.bam.bai",
-        zip,
-        srrun=sampleinfo.Run.values,
-        samplealias=sampleinfo.SampleAlias.values,
-    ),
-=======
-    srrbam=expand("{samplealias}/{srrun}.sort.md.bam.bai", zip, \
-                  srrun=sampleinfo.Run.values, \
-                  samplealias=sampleinfo.SampleAlias.values)
->>>>>>> origin/monkeyflower
 )
 
 
@@ -184,13 +175,38 @@ if "repeatlibrary" in config.keys():
         suffix=["masked", "out", "tbl"],
     )
 
+callset = ["all"]
 if "output" in config.keys():
     for roi, obj in config["output"].items():
+        callset_roi = list(obj.get("callset", {}).keys())
+        callset.extend(callset_roi)
         key = f"output.{roi}"
         results = [
-            os.path.join(f"{roi}", "allsites.vcf.gz.tbi"),
             os.path.join(f"{roi}", "save.sh"),
         ]
+        results.extend(
+            expand(
+                os.path.join(f"{roi}/{{callset}}.{{sites}}.vcf.gz.bcftools.stats"),
+                callset=callset_roi,
+                sites=["variantsites", "allsites"],
+            )
+        )
+        if "filter" in obj.keys():
+            for cs_sites, filt in obj["filter"].items():
+                results.append(
+                    os.path.join(
+                        f"{roi}", f"{cs_sites}.vcftools.filtered.vcf.gz.bcftools.stats"
+                    )
+                )
+        results.extend(
+            expand(
+                f"{roi}/vcftools/{{callset}}.{{sites}}.subset.{{stat}}.{{ext}}",
+                stat=VCFTOOLS_STATS.keys(),
+                ext=["tab", "png"],
+                sites=["allsites", "variantsites"],
+                callset=callset_roi + ["all"],
+            )
+        )
         results.extend(
             expand(
                 f"{roi}/{{samplealias}}/{{srrun}}_R1.fastq.gz",
@@ -209,6 +225,11 @@ if "output" in config.keys():
         )
         results.append(f"{roi}/multiqc_report.html")
         all_results[key] = results
+
+    if len(callset) > 0:
+
+        wildcard_constraints:
+            callset="(" + "|".join([x for x in set(callset)]) + ")",
 
 
 rule all:
@@ -518,11 +539,7 @@ rule bwa_mem_srrinput:
     NB: This will use the SampleName column to identify the sample
     (not the SRS id)."""
     output:
-<<<<<<< HEAD
         bam=temp("{samplealias}/{srrun}.sort.md.bam"),
-=======
-        bam="{samplealias}/{srrun}.sort.md.bam",
->>>>>>> origin/monkeyflower
     input:
         srr="{srrun}/{srrun}.sra",
         reference=config["reference"],
@@ -599,19 +616,6 @@ rule samtools_index_bam:
         samtools index {input} > {log} 2>&1
         """
 
-rule samtools_index_srr_bam:
-    """Index SRR bam file"""
-    output: "{samplealias}/{srrun}.sort.md.bam.bai",
-    input: "{samplealias}/{srrun}.sort.md.bam",
-    conda: "envs/environment.yml",
-    benchmark: "benchmarks/samtools_index_srr_bam/{samplealias}/{srrun}.bam.bai.benchmark.txt",
-    log: "logs/samtools_index_srr_bam/{samplealias}/{srrun}.bam.bai.log",
-    threads: 1
-    shell:
-        """
-        samtools index {input} > {log} 2>&1
-        """
-
 
 ##############################
 # Region-based analyses (roi)
@@ -629,12 +633,7 @@ rule make_roi_bed:
     output:
         "{roi}/{roi}.bed",
     params:
-        roi=lambda wildcards: "\n".join(
-            [
-                "\t".join(re.split(":|-", x))
-                for x in config["output"][wildcards.roi]["roi"]
-            ]
-        ),
+        roi=make_roi_bed_roi,
     conda:
         "envs/environment.yml"
     benchmark:
@@ -907,8 +906,8 @@ rule gatk_apply_bqsr:
 rule gatk_combine_gvcfs:
     """Run GATK CombineGVCFs"""
     output:
-        vcf="{roi}{sep}combine.g.vcf.gz",
-        tbi="{roi}{sep}combine.g.vcf.gz.tbi",
+        vcf="{roi}{sep}{callset}.combine.g.vcf.gz",
+        tbi="{roi}{sep}{callset}.combine.g.vcf.gz.tbi",
     input:
         vcf=gatk_combine_gvcfs_input,
         ref=os.path.join("{roi}", config["reference"]),
@@ -917,9 +916,9 @@ rule gatk_combine_gvcfs:
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/gatk_combine_gvcfs/{roi}{sep}combined.g.vcf.gz.benchmark.txt"
+        "benchmarks/gatk_combine_gvcfs/{roi}{sep}{callset}.combine.g.vcf.gz.benchmark.txt"
     log:
-        "logs/gatk_combine_gvcfs/{roi}{sep}combined.g.vcf.gz.log",
+        "logs/gatk_combine_gvcfs/{roi}{sep}{callset}.combine.g.vcf.gz.log",
     threads: 1
     shell:
         """
@@ -930,17 +929,17 @@ rule gatk_combine_gvcfs:
 rule gatk_genotype_gvcfs:
     """GATK GenotypeGVCFs"""
     output:
-        vcf="{roi}{sep}allsites.vcf.gz",
-        tbi="{roi}{sep}allsites.vcf.gz.tbi",
+        vcf="{roi}{sep}{callset}.allsites.vcf.gz",
+        tbi="{roi}{sep}{callset}.allsites.vcf.gz.tbi",
     input:
-        vcf="{roi}{sep}combine.g.vcf.gz",
+        vcf="{roi}{sep}{callset}.combine.g.vcf.gz",
         ref=os.path.join("{roi}", config["reference"]),
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/gatk_genotype_gvcfs/{roi}{sep}allsites.vcf.gz.benchmark.txt"
+        "benchmarks/gatk_genotype_gvcfs/{roi}{sep}{callset}.allsites.vcf.gz.benchmark.txt"
     log:
-        "logs/gatk_genotype_gvcfs/{roi}{sep}allsites.log",
+        "logs/gatk_genotype_gvcfs/{roi}{sep}{callset}.allsites.log",
     threads: 1
     shell:
         """
@@ -1012,6 +1011,170 @@ rule multiqc_roi:
 
 
 ##############################
+# Variant filtering
+#
+# Generate stats and filter variants
+##############################
+rule bcftools_view_variant_sites:
+    """Generate variants only output file"""
+    output:
+        vcf="{roi}/{callset}.variantsites.vcf.gz",
+        tbi="{roi}/{callset}.variantsites.vcf.gz.tbi",
+    input:
+        vcf="{roi}/{callset}.allsites.vcf.gz",
+        tbi="{roi}/{callset}.allsites.vcf.gz.tbi",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/bcftools_view_variant_sites/{roi}/{callset}.variantsites.vcf.gz.benchmark.txt"
+    log:
+        "logs/bcftools_view_variant_sites/{roi}/{callset}.variantsites.vcf.gz.log",
+    threads: 1
+    shell:
+        """
+        bcftools filter -i "QUAL>0" {input.vcf} | bcftools view -m 2 - -o {output.vcf} -O z 2>{log}
+        bcftools index -t {output.vcf}
+        """
+
+
+rule vcflib_subset:
+    """Subset"""
+    output:
+        vcf="{prefix}.subset.vcf.gz",
+        tbi="{prefix}.subset.vcf.gz.tbi",
+    input:
+        vcf="{prefix}.vcf.gz",
+        tbi="{prefix}.vcf.gz.tbi",
+    params:
+        samplesize=100000,
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/vcflib_subset/{prefix}.subset.vcf.gz.benchmark.txt"
+    log:
+        "logs/vcflib_subset/{prefix}.subset.vcf.gz.log",
+    threads: 1
+    shell:
+        """
+        nsamples=$(bcftools stats {input.vcf} | grep "number of records:" | cut -f 4);
+        frac=$(echo {params.samplesize} / $nsamples | bc -l);
+        bcftools view {input.vcf} | vcfrandomsample -r $frac | bgzip -c > {output.vcf}
+        bcftools index -t {output.vcf}
+        """
+
+
+rule vcftools_stats:
+    """Generate vcftools stats for callset"""
+    output:
+        stat="{roi}{sep}vcftools/{callset}.{sites}.{label}.{stat}",
+    input:
+        vcf="{roi}{sep}{callset}.{sites}.{label}.vcf.gz",
+        tbi="{roi}{sep}{callset}.{sites}.{label}.vcf.gz.tbi",
+    params:
+        stat=vcftools_stats,
+        options=vcftools_stats_options,
+        out=lambda wildcards: f"{wildcards.roi}{wildcards.sep}vcftools/{wildcards.callset}.{wildcards.sites}.{wildcards.label}",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/vcftools_stats/{roi}{sep}vcftools/{callset}.{sites}.{label}.{stat}.benchmark.txt"
+    log:
+        "logs/vcftools_stats/{roi}{sep}vcftools/{callset}.{sites}.{label}.{stat}.log",
+    threads: 1
+    shell:
+        """
+        vcftools --gzvcf {input.vcf} {params.stat} {params.options} --out {params.out} > {log} 2>&1
+        """
+
+
+rule vcftools_filter:
+    """Filter vcf file"""
+    output:
+        vcf="{roi}/{callset}.{sites}.vcftools.filtered.vcf.gz",
+        tbi="{roi}/{callset}.{sites}.vcftools.filtered.vcf.gz.tbi",
+    input:
+        vcf="{roi}/{callset}.{sites}.vcf.gz",
+        tbi="{roi}/{callset}.{sites}.vcf.gz.tbi",
+    params:
+        options=vcftools_filter_options,
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/vcftools_filter/{roi}/{callset}.{sites}.vcftools.filtered.vcf.gz.benchmark.txt"
+    log:
+        "logs/vcftools_filter/{roi}/{callset}.{sites}.vcftools.filtered.vcf.gz.log",
+    threads: 1
+    shell:
+        """
+        vcftools  --gzvcf {input.vcf} {params.options} --recode --stdout | bgzip -c > {output.vcf} 2>{log}
+        bcftools index -t {output.vcf}
+        """
+
+
+rule csvtk_compile_vcftools_stats:
+    """Compile vcftools stats"""
+    output:
+        tab="{roi}{sep}vcftools/{callset}.{sites}.{label}.{stat}.tab",
+    input:
+        stat="{roi}{sep}vcftools/{callset}.{sites}.{label}.{stat}",
+    params:
+        options=csvtk_compile_vcftools_stats_options,
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/csvtk_compile_vcftools_stats/{roi}{sep}vcftools/{callset}.{sites}.{label}.{stat}.txt.benchmark.txt"
+    log:
+        "logs/csvtk_compile_vcftools_stats/{roi}{sep}vcftools/{callset}.{sites}.{label}.{stat}.txt.log",
+    threads: 1
+    shell:
+        """
+        csvtk fix -t -T {input.stat} | csvtk summary -t {params.options} > {output.tab} 2> {log}
+        """
+
+
+rule csvtk_plot_vcftools_stats:
+    """Plot vcftools output"""
+    output:
+        png="{roi}{sep}vcftools/{callset}.{sites}.{label}.{stat}.png",
+    input:
+        stat="{roi}{sep}vcftools/{callset}.{sites}.{label}.{stat}",
+    params:
+        cmd=csvtk_plot_vcftools_stats,
+        options=csvtk_plot_vcftools_stats_options,
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/csvtk_plot_vcftools_stats/{roi}{sep}vcftools/{callset}.{sites}.{label}.{stat}.png.benchmark.txt"
+    log:
+        "logs/csvtk_plot_vcftools_stats/{roi}{sep}vcftools/{callset}.{sites}.{label}.{stat}.png.log",
+    threads: 1
+    shell:
+        """
+        cat {input.stat} | {params.cmd} {params.options} > {output.png}
+        """
+
+
+rule bcftools_stats:
+    """Calculate stats for vcf"""
+    output:
+        stats="{prefix}.vcf.gz.bcftools.stats",
+    input:
+        vcf="{prefix}.vcf.gz",
+        tbi="{prefix}.vcf.gz.tbi",
+    conda:
+        "envs/environment.yml"
+    benchmark:
+        "benchmarks/bcftools_stats/{prefix}.vcf.gz.bcftools.stats.benchmark.txt"
+    log:
+        "logs/bcftools_stats/{prefix}.vcf.gz.bcftools.stats.log",
+    threads: 1
+    shell:
+        """
+        bcftools stats {input.vcf} > {output.stats}
+        """
+
+
+##############################
 # Make save script
 ##############################
 rule make_roi_save_script:
@@ -1019,7 +1182,10 @@ rule make_roi_save_script:
     output:
         sh="{roi}/save.sh",
     input:
-        lambda wildcards: os.path.join(wildcards.roi, "allsites.vcf.gz"),
+        lambda wildcards: expand(
+            os.path.join(wildcards.roi, "all.{sites}.vcf.gz"),
+            sites=["allsites", "variantsites"],
+        ),
     conda:
         "envs/environment.yml"
     params:
@@ -1045,10 +1211,12 @@ rule make_roi_save_script:
     shell:
         """
         echo "#/bin/bash" > {output.sh};
-        echo 'rsync -av --include=\"*/\" {params.ubam}\
+        echo 'OPTIONS=\"$@\"' >> {output.sh};
+        echo 'rsync -amv ${{OPTIONS}} --include=\"*/\" {params.ubam}\
             {params.fastq} {params.reference} {params.recal_gvcf} {params.recal_bam}\
-            --include *allsites.vcf.gz* --include *combine.g.vcf.gz* \
-            --exclude=\"*\" {wildcards.roi} {params.outdir}' >> {output.sh}
+            --include *sites.vcf.gz* --include *combine.g.vcf.gz* \
+            --exclude=\"*\" {wildcards.roi} {params.outdir}' >> {output.sh};
+        chmod +x {output.sh}
         """
 
 
