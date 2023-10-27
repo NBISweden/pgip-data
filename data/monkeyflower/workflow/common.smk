@@ -12,6 +12,21 @@ VCFTOOLS_STATS = {
 }
 
 
+def get_envmodules(envmodules):
+    if not isinstance(envmodules, list):
+        envmodules = [envmodules]
+    try:
+        modules = config["envmodules"]["__site__"]
+    except KeyError as e:
+        modules = []
+    for mod in envmodules:
+        try:
+            modules.extend(config["envmodules"][mod])
+        except KeyError as e:
+            pass
+    return modules
+
+
 def make_roi_bed_roi(wildcards):
     res = str()
     try:

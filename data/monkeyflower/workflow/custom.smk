@@ -27,6 +27,8 @@ rule make_sampleinfo:
     input:
         runinfo="SraRunInfo.csv",
         samples="samples.csv",
+    envmodules:
+        get_envmodules("csvtk"),
     conda:
         "envs/environment.yml"
     benchmark:
