@@ -262,7 +262,7 @@ rule download_sraruninfo:
         bioproject=config["bioproject"],
         filter2=csvtk_filter2,
     envmodules:
-        get_envmodules("sratools"),
+        *get_envmodules("sratools"),
     conda:
         "envs/sratools.yaml"
     log:
@@ -309,7 +309,7 @@ rule samtools_faidx:
     input:
         "{prefix}.fasta",
     envmodules:
-        get_envmodules("samtools"),
+        *get_envmodules("samtools"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -327,8 +327,10 @@ rule picard_create_sequence_dictionary:
         "{prefix}.dict",
     input:
         "{prefix}.fasta",
+    params:
+        cmd=config.get("command", {}).get("picard", "picard")
     envmodules:
-        get_envmodules("picard")
+        *get_envmodules("picard")
     conda:
         "envs/environment.yml"
     benchmark:
@@ -337,7 +339,9 @@ rule picard_create_sequence_dictionary:
         "logs/{prefix}.dict.log",
     threads: 1
     shell:
-        """picard CreateSequenceDictionary --REFERENCE {input} > {log} 2>&1"""
+        """
+        {params.cmd} CreateSequenceDictionary --REFERENCE {input} > {log} 2>&1
+        """
 
 
 ##############################
@@ -354,7 +358,7 @@ rule build_database:
     input:
         config["reference"],
     envmodules:
-        get_envmodules("repeatmasker"),
+        *get_envmodules("repeatmasker"),
     conda:
         "envs/repeatmasker.yml"
     benchmark:
@@ -380,7 +384,7 @@ rule repeat_modeler:
     params:
         lib=config["repeatlibrary"],
     envmodules:
-        get_envmodules("repeatmodeler")
+        *get_envmodules("repeatmodeler")
     conda:
         "envs/repeatmasker.yml"
     benchmark:
@@ -442,7 +446,7 @@ rule repeat_masker:
         species=config.get("species", "nn"),
         libdir=os.environ.get("REPEATMASKER_LIBDIR"),
     envmodules:
-        get_envmodules("repeatmasker"),
+        *get_envmodules("repeatmasker"),
     conda:
         "envs/repeatmasker.yml"
     benchmark:
@@ -471,7 +475,7 @@ rule repeat_masker_custom:
         species=config.get("species", "nn"),
         ref={config["reference"]},
     envmodules:
-        get_envmodules("repeatmasker"),
+        *get_envmodules("repeatmasker"),
     conda:
         "envs/repeatmasker.yml"
     benchmark:
@@ -521,7 +525,7 @@ rule bwa_index:
     input:
         fasta="{prefix}.fasta",
     envmodules:
-        get_envmodules("bwa"),
+        *get_envmodules("bwa"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -539,7 +543,7 @@ rule sra_prefetch:
     output:
         srrun=temp("{srrun}/{srrun}.sra"),
     envmodules:
-        get_envmodules("sratools"),
+        *get_envmodules("sratools"),
     conda:
         "envs/sratools.yaml"
     benchmark:
@@ -569,7 +573,7 @@ rule bwa_mem_srrinput:
         rg=get_read_group,
         options="-M",
     envmodules:
-        get_envmodules(["sratools", "samtools", "bwa"]),
+        *get_envmodules(["sratools", "samtools", "bwa"]),
     conda:
         "envs/bwamem.yaml"
     benchmark:
@@ -606,13 +610,13 @@ rule bwa_mem_ubam_to_roi:
         rg=get_roi_read_group,
         options="-M",
     envmodules:
-        get_envmodules(["bwa", "samtools"]),
+        *get_envmodules(["bwa", "samtools"]),
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/bwa_mem_roi/{roi}/{samplealias}/{samplealias}.bam.benchmark.txt"
+        "benchmarks/bwa_mem_ubam_to_roi/{roi}/{samplealias}/{samplealias}.bam.benchmark.txt"
     log:
-        "logs/bwa_mem_roi/{roi}/{samplealias}/{samplealias}.bam.log",
+        "logs/bwa_mem_ubam_to_roi/{roi}/{samplealias}/{samplealias}.bam.log",
     threads: 14
     shell:
         """
@@ -631,7 +635,7 @@ rule samtools_index_bam:
     input:
         "{roi}{sep}{samplealias}/{samplealias}.{tag}.bam",
     envmodules:
-        get_envmodules("samtools"),
+        *get_envmodules("samtools"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -684,7 +688,7 @@ rule subset_reference_to_roi:
         fai=config["reference"] + ".fai",
         bed="{roi}/{roi}.bed",
     envmodules:
-        get_envmodules("seqtk"),
+        *get_envmodules("seqtk"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -711,7 +715,7 @@ rule subset_bam_for_roi:
             [f'"{x}"' for x in config["output"][wildcards.roi]["roi"]]
         ),
     envmodules:
-        get_envmodules("samtools"),
+        *get_envmodules("samtools"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -732,8 +736,10 @@ rule make_ubam_for_roi:
         bam=temp("{roi}/{samplealias}/{samplealias}.unmapped.samplealias.bam"),
     input:
         bam="{roi}/{samplealias}/{samplealias}.roi.bam",
+    params:
+        cmd=config.get("command", {}).get("picard", "picard")
     envmodules:
-        get_envmodules("picard"),
+        *get_envmodules("picard"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -744,7 +750,7 @@ rule make_ubam_for_roi:
     priority: 300
     shell:
         """
-        picard RevertSam --INPUT {input.bam} \
+        {params.cmd} RevertSam --INPUT {input.bam} \
                    --OUTPUT {output.bam} \
                    --SANITIZE true \
                    --MAX_DISCARD_FRACTION 0.5 \
@@ -771,7 +777,7 @@ rule rename_ubam_sample:
     params:
         sample=lambda wildcards: get_samplealias_dict(wildcards)["sample"],
     envmodules:
-        get_envmodules("samtools"),
+        *get_envmodules("samtools"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -794,7 +800,7 @@ rule samtools_fastq_roi:
         bam="{roi}/{samplealias}/{samplealias}.unmapped.bam",
         bai="{roi}/{samplealias}/{samplealias}.unmapped.bam.bai",
     envmodules:
-        get_envmodules("samtools"),
+        *get_envmodules("samtools"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -818,8 +824,10 @@ rule picard_mark_duplicates:
         metrics="{roi}/markdup/{samplealias}/{samplealias}.sort.dup.dup_metrics.txt",
     input:
         bam="{roi}/{samplealias}/{samplealias}.sort.bam",
+    params:
+        cmd=config.get("command", {}).get("picard", "picard")
     envmodules:
-        get_envmodules("picard"),
+        *get_envmodules("picard"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -829,7 +837,7 @@ rule picard_mark_duplicates:
     threads: 1
     shell:
         """
-        picard MarkDuplicates \
+        {params.cmd} MarkDuplicates \
             --CREATE_INDEX true \
             --INPUT {input.bam} \
             --METRICS_FILE {output.metrics} \
@@ -865,7 +873,7 @@ rule gatk_haplotypecaller:
         mode="(.g|)",
         raw="(.raw|)",
     envmodules:
-        get_envmodules("gatk"),
+        *get_envmodules("gatk"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -891,7 +899,7 @@ rule gatk_raw_or_bqsr_variant_filtration:
     params:
         options=gatk_raw_or_bqsr_variant_filtration_options,
     envmodules:
-        get_envmodules("gatk"),
+        *get_envmodules("gatk"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -914,7 +922,7 @@ rule gatk_base_recalibrator:
         known="{roi}{sep}{samplealias}/{samplealias}.{label}.raw.hc.g.filtered.vcf.gz",
         ref=os.path.join("{roi}", config["reference"]),
     envmodules:
-        get_envmodules("gatk"),
+        *get_envmodules("gatk"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -937,13 +945,13 @@ rule gatk_apply_bqsr:
         table="{roi}{sep}{samplealias}/{samplealias}.{label}.recal.table",
         bam="{roi}{sep}{samplealias}/{samplealias}.{label}.bam",
     envmodules:
-        get_envmodules("gatk"),
+        *get_envmodules("gatk"),
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/gatk_bqsr/{roi}{sep}{samplealias}/{samplealias}.{label}.recal.output.txt"
+        "benchmarks/gatk_apply_bqsr/{roi}{sep}{samplealias}/{samplealias}.{label}.recal.output.txt"
     log:
-        "logs/gatk_bqsr/{roi}{sep}{samplealias}/{samplealias}.{label}.recal.log",
+        "logs/gatk_apply_bqsr/{roi}{sep}{samplealias}/{samplealias}.{label}.recal.log",
     threads: 1
     shell:
         """
@@ -962,7 +970,7 @@ rule gatk_combine_gvcfs:
     params:
         vcf=lambda wildcards, input: " ".join([f"-V {x}" for x in input.vcf]),
     envmodules:
-        get_envmodules("gatk"),
+        *get_envmodules("gatk"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -985,7 +993,7 @@ rule gatk_genotype_gvcfs:
         vcf="{roi}{sep}{callset}.combine.g.vcf.gz",
         ref=os.path.join("{roi}", config["reference"]),
     envmodules:
-        get_envmodules("gatk"),
+        *get_envmodules("gatk"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1011,7 +1019,7 @@ rule fastqc:
     wildcard_constraints:
         read="(R1|R2)",
     envmodules:
-        get_envmodules("fastqc"),
+        *get_envmodules("fastqc"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1033,7 +1041,7 @@ rule qualimap_bamqc:
     input:
         bam="{roi}/{prefix}.bam",
     envmodules:
-        get_envmodules("qualimap"),
+        *get_envmodules("qualimap"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1054,7 +1062,7 @@ rule multiqc_roi:
     input:
         multiqc_roi_input,
     envmodules:
-        get_envmodules("qualimap"),
+        *get_envmodules("qualimap"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1082,7 +1090,7 @@ rule bcftools_view_variant_sites:
         vcf="{roi}/{callset}.allsites.vcf.gz",
         tbi="{roi}/{callset}.allsites.vcf.gz.tbi",
     envmodules:
-        get_envmodules("bcftools"),
+        *get_envmodules("bcftools"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1108,7 +1116,7 @@ rule vcflib_subset:
     params:
         samplesize=100000,
     envmodules:
-        get_envmodules("vcflib"),
+        *get_envmodules("vcflib"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1137,7 +1145,7 @@ rule vcftools_stats:
         options=vcftools_stats_options,
         out=lambda wildcards: f"{wildcards.roi}{wildcards.sep}vcftools/{wildcards.callset}.{wildcards.sites}.{wildcards.label}",
     envmodules:
-        get_envmodules("vcftools"),
+        *get_envmodules("vcftools"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1162,7 +1170,7 @@ rule vcftools_filter:
     params:
         options=vcftools_filter_options,
     envmodules:
-        get_envmodules(["bcftools", "vcftools"]),
+        *get_envmodules(["bcftools", "vcftools"]),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1186,7 +1194,7 @@ rule csvtk_compile_vcftools_stats:
     params:
         options=csvtk_compile_vcftools_stats_options,
     envmodules:
-        get_envmodules("csvtk"),
+        *get_envmodules("csvtk"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1210,7 +1218,7 @@ rule csvtk_plot_vcftools_stats:
         cmd=csvtk_plot_vcftools_stats,
         options=csvtk_plot_vcftools_stats_options,
     envmodules:
-        get_envmodules("csvtk"),
+        *get_envmodules("csvtk"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1232,7 +1240,7 @@ rule bcftools_stats:
         vcf="{prefix}.vcf.gz",
         tbi="{prefix}.vcf.gz.tbi",
     envmodules:
-        get_envmodules("bcftools"),
+        *get_envmodules("bcftools"),
     conda:
         "envs/environment.yml"
     benchmark:
