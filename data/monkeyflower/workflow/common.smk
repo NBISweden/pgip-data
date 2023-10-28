@@ -42,7 +42,7 @@ def make_roi_bed_roi(wildcards):
 
 
 def get_read_group(wildcards):
-    info = get_srrun_dict(wildcards)
+    info = get_samplealias_dict(wildcards)
     run = info["srrun"]
     sample = info["samplename"]
     rg = f'-R "@RG\\tID:{run}\\tSM:{sample}\\tPL:ILLUMINA"'
@@ -50,19 +50,18 @@ def get_read_group(wildcards):
 
 
 def get_roi_read_group(wildcards):
-    info = get_srrun_dict(wildcards)
+    info = get_samplealias_dict(wildcards)
     run = info["srrun"]
     sample = info["sample"]
     rg = f'-R "@RG\\tID:{run}\\tSM:{sample}\\tPL:ILLUMINA"'
     return rg
 
 
-def get_srrun_dict(wildcards):
-    srrun = wildcards.srrun
-    samplename = sampleinfo[sampleinfo["Run"] == srrun].SampleName.values[0]
-    sample = sampleinfo[sampleinfo["Run"] == srrun].SampleAlias.values[0]
-
-    info = {"srrun": srrun, "samplename": samplename, "sample": sample}
+def get_samplealias_dict(wildcards):
+    samplealias = wildcards.samplealias
+    samplename = sampleinfo.set_index("SampleAlias").loc[samplealias].SampleName
+    srrun = sampleinfo.set_index("SampleAlias").loc[samplealias].Run
+    info = {"srrun": srrun, "samplename": samplename, "sample": samplealias}
     return info
 
 
@@ -83,10 +82,9 @@ def get_sequence_dictionary(wildcards):
 
 
 def subset_bam_for_roi_input(wildcards, *, ext=""):
-    srsamplename = sampleinfo[
-        sampleinfo["SampleAlias"] == wildcards.samplealias
-    ].SampleAlias.values[0]
-    return f"{srsamplename}/{wildcards.srrun}.sort.md.bam{ext}"
+    samplealias = wildcards.samplealias
+    srrun = sampleinfo.set_index("SampleAlias").loc[samplealias].Run
+    return f"{samplealias}/{srrun}.sort.md.bam{ext}"
 
 
 def gatk_raw_or_bqsr_variant_filtration_options(wildcards):
@@ -126,7 +124,7 @@ def gatk_raw_or_bqsr_variant_filtration_options(wildcards):
 
 def make_roi_save_script_input(wildcards):
     roi = config["output"][wildcards.roi]
-    data = [os.path.join(wildcards.roi, "allsites.vcf.gz")]
+    data = [os.path.join(wildcards.roi, "all.allsites.vcf.gz")]
     if roi["ubam"]:
         data.extend(
             expand(
@@ -168,18 +166,17 @@ def make_roi_save_script_input(wildcards):
 
 def gatk_combine_gvcfs_input(wildcards):
     fmt = (
-        f"{wildcards.roi}{wildcards.sep}{{samplealias}}/{{srrun}}"
+        f"{wildcards.roi}{wildcards.sep}{{samplealias}}/{{samplealias}}"
         ".sort.dup.recal.hc.g.vcf.gz"
     )
     try:
-        samples = config["output"][wildcards.roi]["callset"][
-            wildcards.callset.rstrip(".")
-        ]["samples"]
+        samples = config["output"][wildcards.roi]["callset"][wildcards.callset][
+            "samples"
+        ]
         info = sampleinfo[sampleinfo.SampleAlias.isin(samples)]
     except:
         info = sampleinfo
-        raise
-    vcf = expand(fmt, zip, samplealias=info.SampleAlias.values, srrun=info.Run.values)
+    vcf = expand(fmt, samplealias=info.SampleAlias.values)
     return vcf
 
 
@@ -188,19 +185,17 @@ def multiqc_roi_input(wildcards):
         fmt = fmt.format(qc=qc)
         return expand(
             fmt,
-            zip,
             samplealias=sampleinfo.SampleAlias.values,
-            srrun=sampleinfo.Run.values,
         )
 
-    fmt = f"{wildcards.roi}/{{qc}}/{{{{samplealias}}}}/{{{{srrun}}}}"
+    fmt = f"{wildcards.roi}/{{qc}}/{{{{samplealias}}}}/{{{{samplealias}}}}"
     results = dict()
     results["fastqc"] = _expand_fmt(f"{fmt}_R1_fastqc/summary.txt", "fastqc")
     results["qualimap"] = _expand_fmt(
         f"{fmt}.sort_stats/genome_results.txt", "qualimap"
     )
     results["markdups"] = _expand_fmt(f"{fmt}.sort.dup.dup_metrics.txt", "markdup")
-    fmt = f"{wildcards.roi}/vcftools/allsites.{{stat}}"
+    fmt = f"{wildcards.roi}/vcftools/all.allsites.subset.{{stat}}"
     results["vcftools"] = expand(fmt, stat=VCFTOOLS_STATS.keys())
     if len(custom_all) != 0:
         results["vcftools.custom"] = custom_multiqc_roi_input(wildcards)
