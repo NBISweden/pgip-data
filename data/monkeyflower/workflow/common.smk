@@ -1,5 +1,6 @@
 import re
 import itertools
+import copy
 
 VCFTOOLS_STATS = {
     "het": "het",
@@ -13,18 +14,19 @@ VCFTOOLS_STATS = {
 
 
 def get_envmodules(envmodules):
+    retmodules = []
     if not isinstance(envmodules, list):
         envmodules = [envmodules]
     try:
-        modules = config["envmodules"]["__site__"]
+        retmodules = copy.deepcopy(config["envmodules"]["__site__"])
     except KeyError as e:
-        modules = []
+        retmodules = []
     for mod in envmodules:
         try:
-            modules.extend(config["envmodules"][mod])
+            retmodules.extend(config["envmodules"][mod])
         except KeyError as e:
             pass
-    return modules
+    return retmodules
 
 
 def make_roi_bed_roi(wildcards):
@@ -173,12 +175,11 @@ def gatk_combine_gvcfs_input(wildcards):
     )
     try:
         samples = config["output"][wildcards.roi]["callset"][
-            wildcards.callset.rstrip(".")
+            wildcards.callset
         ]["samples"]
         info = sampleinfo[sampleinfo.SampleAlias.isin(samples)]
     except:
         info = sampleinfo
-        raise
     vcf = expand(fmt, zip, samplealias=info.SampleAlias.values, srrun=info.Run.values)
     return vcf
 
