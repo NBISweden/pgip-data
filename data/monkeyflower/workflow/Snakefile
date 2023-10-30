@@ -173,6 +173,11 @@ all_results = dict(
     masked=expand(f'{config["reference"]}.{{suffix}}', suffix=["masked", "out", "tbl"]),
 )
 
+srrun_all_input = expand("{samplealias}/{srrun}.sort.md.bam",
+                         zip,
+                         srrun=sampleinfo.Run.values,
+                         samplealias=sampleinfo.SampleAlias.values,
+                         )
 
 if "repeatlibrary" in config.keys():
     all_results["repeats"] = [f'{config["repeatlibrary"]}-families.fa']
@@ -238,6 +243,11 @@ rule all:
     """Pseudo-rule for all targets"""
     input:
         **all_results,
+
+
+rule srrun_all:
+    """Pseudo-rule to generate srrun mappings"""
+    input: srrun_all_input,
 
 
 ##############################
@@ -563,8 +573,8 @@ rule bwa_mem_srrinput:
     NB: This will use the SampleName column to identify the sample
     (not the SRS id)."""
     output:
-        bam=temp("{samplealias}/{srrun}.sort.md.bam"),
-        bai=temp("{samplealias}/{srrun}.sort.md.bam.bai"),
+        bam="{samplealias}/{srrun}.sort.md.bam",
+        bai="{samplealias}/{srrun}.sort.md.bam.bai",
     input:
         srr="{srrun}/{srrun}.sra",
         reference=config["reference"],
