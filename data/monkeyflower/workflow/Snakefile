@@ -1072,7 +1072,7 @@ rule multiqc_roi:
     input:
         multiqc_roi_input,
     envmodules:
-        *get_envmodules("qualimap"),
+        *get_envmodules("multiqc"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1126,7 +1126,7 @@ rule vcflib_subset:
     params:
         samplesize=100000,
     envmodules:
-        *get_envmodules("vcflib"),
+        *get_envmodules(["bcftools", "vcflib"]),
     conda:
         "envs/environment.yml"
     benchmark:
