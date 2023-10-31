@@ -198,7 +198,7 @@ if "output" in config.keys():
         results.extend(
             expand(
                 os.path.join(f"{roi}/{{callset}}.{{sites}}.vcf.gz.bcftools.stats"),
-                callset=callset_roi,
+                callset=callset_roi + ["all"],
                 sites=["variantsites", "allsites"],
             )
         )
@@ -975,7 +975,8 @@ rule gatk_combine_gvcfs:
         vcf="{roi}{sep}{callset}.combine.g.vcf.gz",
         tbi="{roi}{sep}{callset}.combine.g.vcf.gz.tbi",
     input:
-        vcf=gatk_combine_gvcfs_input,
+        vcf=lambda wildcards: gatk_combine_gvcfs_input(wildcards),
+        tbi=lambda wildcards: gatk_combine_gvcfs_input(wildcards, True),
         ref=os.path.join("{roi}", config["reference"]),
     params:
         vcf=lambda wildcards, input: " ".join([f"-V {x}" for x in input.vcf]),
@@ -1314,4 +1315,4 @@ ruleorder: make_ubam_for_roi > samtools_index_bam
 
 
 localrules:
-    download_sraruninfo,
+    download_sraruninfo, csvtk_compile_vcftools_stats
