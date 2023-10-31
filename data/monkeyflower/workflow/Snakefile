@@ -173,6 +173,11 @@ all_results = dict(
     masked=expand(f'{config["reference"]}.{{suffix}}', suffix=["masked", "out", "tbl"]),
 )
 
+srrun_all_input = expand("{samplealias}/{srrun}.sort.md.bam",
+                         zip,
+                         srrun=sampleinfo.Run.values,
+                         samplealias=sampleinfo.SampleAlias.values,
+                         )
 
 if "repeatlibrary" in config.keys():
     all_results["repeats"] = [f'{config["repeatlibrary"]}-families.fa']
@@ -193,7 +198,7 @@ if "output" in config.keys():
         results.extend(
             expand(
                 os.path.join(f"{roi}/{{callset}}.{{sites}}.vcf.gz.bcftools.stats"),
-                callset=callset_roi,
+                callset=callset_roi + ["all"],
                 sites=["variantsites", "allsites"],
             )
         )
@@ -238,6 +243,11 @@ rule all:
     """Pseudo-rule for all targets"""
     input:
         **all_results,
+
+
+rule srrun_all:
+    """Pseudo-rule to generate srrun mappings"""
+    input: srrun_all_input,
 
 
 ##############################
@@ -563,8 +573,8 @@ rule bwa_mem_srrinput:
     NB: This will use the SampleName column to identify the sample
     (not the SRS id)."""
     output:
-        bam=temp("{samplealias}/{srrun}.sort.md.bam"),
-        bai=temp("{samplealias}/{srrun}.sort.md.bam.bai"),
+        bam="{samplealias}/{srrun}.sort.md.bam",
+        bai="{samplealias}/{srrun}.sort.md.bam.bai",
     input:
         srr="{srrun}/{srrun}.sra",
         reference=config["reference"],
@@ -965,7 +975,8 @@ rule gatk_combine_gvcfs:
         vcf="{roi}{sep}{callset}.combine.g.vcf.gz",
         tbi="{roi}{sep}{callset}.combine.g.vcf.gz.tbi",
     input:
-        vcf=gatk_combine_gvcfs_input,
+        vcf=lambda wildcards: gatk_combine_gvcfs_input(wildcards),
+        tbi=lambda wildcards: gatk_combine_gvcfs_input(wildcards, True),
         ref=os.path.join("{roi}", config["reference"]),
     params:
         vcf=lambda wildcards, input: " ".join([f"-V {x}" for x in input.vcf]),
@@ -1062,7 +1073,7 @@ rule multiqc_roi:
     input:
         multiqc_roi_input,
     envmodules:
-        *get_envmodules("qualimap"),
+        *get_envmodules("multiqc"),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1116,7 +1127,7 @@ rule vcflib_subset:
     params:
         samplesize=100000,
     envmodules:
-        *get_envmodules("vcflib"),
+        *get_envmodules(["bcftools", "vcflib"]),
     conda:
         "envs/environment.yml"
     benchmark:
@@ -1304,4 +1315,4 @@ ruleorder: make_ubam_for_roi > samtools_index_bam
 
 
 localrules:
-    download_sraruninfo,
+    download_sraruninfo, csvtk_compile_vcftools_stats

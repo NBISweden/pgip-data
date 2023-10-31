@@ -1,0 +1,36 @@
+bioproject: PRJNA549183
+sraruninfo:
+  csvtk.filter2: $LibraryStrategy=="WGS" && $SampleName!="Assembly Plant"
+datasources:
+  samples.docx: https://doi.org/10.1371/journal.pbio.3000391.s003
+  M_aurantiacus_v1_splitline_ordered.fasta: http://mimubase.org/FTP/Genomes/Maurantiacus_v1.0/M_aurantiacus_v1_splitline_ordered.fasta
+  MAUR_annotation_functional_submission.gff: http://mimubase.org/FTP/Genomes/Maurantiacus_v1.0/MAUR_annotation_functional_submission.gff
+reference: M_aurantiacus_v1_splitline_ordered.fasta
+repeatlibrary: mim_repeat_lib_aug10
+species: "Mimulus guttatus"
+
+# Output data. Key is output directory, value are output files and
+# configuration settings
+output:
+  LG4:
+    relpath: ..
+    roi:
+      - LG4
+    ubam: false
+    fastq: false
+    recal.gvcf: false
+    recal.bam: false
+    reference: true
+    callset:
+      redyellow:
+        samples: [PUN-R-ELF, PUN-R-JMC, PUN-R-LH, PUN-R-MT, PUN-R-UCSD, PUN-Y-BCRD, PUN-Y-INJ, PUN-Y-LO, PUN-Y-PCT, PUN-Y-POTR]
+    plot:
+      redyellow.variantsites:
+        ldepth: "--x-min 0 --x-max 200 --y-max 2000"
+    filter:
+      redyellow.variantsites:
+        miss: 0.75
+        qual: 20
+        # Depth filters alone remove 1/3
+        min_depth: 5
+        max_depth: 15
