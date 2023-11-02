@@ -172,7 +172,7 @@ def gatk_combine_gvcfs_input(wildcards, tbi=False):
         ".sort.dup.recal.hc.g.vcf.gz"
     )
     if tbi:
-        fmt = fmt + ".tbi"
+        fmt = f"{fmt}.tbi"
     try:
         samples = config["output"][wildcards.roi]["callset"][wildcards.callset][
             "samples"

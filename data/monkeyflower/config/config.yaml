@@ -8,6 +8,7 @@ datasources:
 reference: M_aurantiacus_v1_splitline_ordered.fasta
 repeatlibrary: mim_repeat_lib_aug10
 species: "Mimulus guttatus"
+annotation: MAUR_annotation_functional_submission.gff
 
 # Output data. Key is output directory, value are output files and
 # configuration settings
