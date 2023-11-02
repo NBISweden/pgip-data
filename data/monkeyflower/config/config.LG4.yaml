@@ -15,7 +15,7 @@ output:
   LG4:
     relpath: ..
     roi:
-      - LG4
+      - "LG4:0-18557064"
     ubam: false
     fastq: false
     recal.gvcf: false
