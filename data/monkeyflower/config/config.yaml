@@ -22,6 +22,7 @@ output:
     recal.gvcf: true
     recal.bam: true
     reference: true
+    annotation: true
     callset:
       redyellow:
         samples: [PUN-R-ELF, PUN-R-JMC, PUN-R-LH, PUN-R-MT, PUN-R-UCSD, PUN-Y-BCRD, PUN-Y-INJ, PUN-Y-LO, PUN-Y-PCT, PUN-Y-POTR]
@@ -50,6 +51,7 @@ output:
     recal.gvcf: false
     recal.bam: false
     reference: true
+    annotation: true
     callset:
       redyellow:
         samples: [PUN-R-ELF, PUN-R-JMC, PUN-R-LH, PUN-R-MT, PUN-R-UCSD, PUN-Y-BCRD, PUN-Y-INJ, PUN-Y-LO, PUN-Y-PCT, PUN-Y-POTR]

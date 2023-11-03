@@ -1338,9 +1338,10 @@ rule make_roi_save_script:
         recal_bam=lambda wildcards: f'--include "*.recal.ba[mi]"'
         if config["output"][wildcards.roi]["recal.bam"]
         else "",
-        reference=lambda wildcards: f'--include "{config["reference"]}"'
+        reference=lambda wildcards: f'--include "{config["reference"]}*"'
         if config["output"][wildcards.roi]["reference"]
         else "",
+        annotation=lambda wildcards: f'--include "{config["annotation"]}*"' if config["output"][wildcards.roi]["annotation"] else "",
         outdir=lambda wildcards: config["output"][wildcards.roi]["relpath"],
     log:
         "logs/{roi}/save.log",
@@ -1349,10 +1350,18 @@ rule make_roi_save_script:
         """
         echo "#/bin/bash" > {output.sh};
         echo 'OPTIONS=\"$@\"' >> {output.sh};
-        echo 'rsync -amv ${{OPTIONS}} --include=\"*/\" {params.ubam}\
-            {params.fastq} {params.reference} {params.recal_gvcf} {params.recal_bam}\
-            --include *sites.vcf.gz* --include *combine.g.vcf.gz* \
-            --exclude=\"*\" {wildcards.roi} {params.outdir}' >> {output.sh};
+        echo 'rsync -amv ${{OPTIONS}} \\\n
+            --include=\"*/\" \\\n
+            {params.ubam} \\\n
+            {params.fastq} \\\n
+            {params.reference} \\\n
+            {params.recal_gvcf} \\\n
+            {params.recal_bam} \\\n
+            {params.annotation} \\\n
+            --include *sites.vcf.gz* \\\n
+            --include *combine.g.vcf.gz* \\\n
+        --exclude=\"*\" \\\n
+        {wildcards.roi} {params.outdir}' >> {output.sh};
         chmod +x {output.sh}
         """
 

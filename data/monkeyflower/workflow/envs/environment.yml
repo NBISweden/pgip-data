@@ -5,6 +5,7 @@ channels:
   - default
 dependencies:
   - bcftools
+  - bedtools
   - biopython
   - bwa
   - csvtk

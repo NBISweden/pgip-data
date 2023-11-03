@@ -163,6 +163,11 @@ def make_roi_save_script_input(wildcards):
         )
     if roi["reference"]:
         data.append(os.path.join(wildcards.roi, config["reference"]))
+    if "annotation" in config.keys():
+        data.append(os.path.join(wildcards.roi, config['annotation']))
+    if "repeatlibrary" in config.keys():
+        results.append(os.path.join(wildcards.roi, f'{config["reference"]}.masked.out.gff'))
+        results.append(os.path.join(wildcards.roi, f'{config["reference"]}.{config["repeatlibrary"]}.out.gff'))
     return data
 
 
