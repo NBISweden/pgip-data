@@ -163,6 +163,11 @@ def make_roi_save_script_input(wildcards):
         )
     if roi["reference"]:
         data.append(os.path.join(wildcards.roi, config["reference"]))
+    if "annotation" in config.keys():
+        data.append(os.path.join(wildcards.roi, config['annotation']))
+    if "repeatlibrary" in config.keys():
+        results.append(os.path.join(wildcards.roi, f'{config["reference"]}.masked.out.gff'))
+        results.append(os.path.join(wildcards.roi, f'{config["reference"]}.{config["repeatlibrary"]}.out.gff'))
     return data
 
 
@@ -172,7 +177,7 @@ def gatk_combine_gvcfs_input(wildcards, tbi=False):
         ".sort.dup.recal.hc.g.vcf.gz"
     )
     if tbi:
-        fmt = fmt + ".tbi"
+        fmt = f"{fmt}.tbi"
     try:
         samples = config["output"][wildcards.roi]["callset"][wildcards.callset][
             "samples"

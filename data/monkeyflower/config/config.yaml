@@ -8,6 +8,7 @@ datasources:
 reference: M_aurantiacus_v1_splitline_ordered.fasta
 repeatlibrary: mim_repeat_lib_aug10
 species: "Mimulus guttatus"
+annotation: MAUR_annotation_functional_submission.gff
 
 # Output data. Key is output directory, value are output files and
 # configuration settings
@@ -21,6 +22,7 @@ output:
     recal.gvcf: true
     recal.bam: true
     reference: true
+    annotation: true
     callset:
       redyellow:
         samples: [PUN-R-ELF, PUN-R-JMC, PUN-R-LH, PUN-R-MT, PUN-R-UCSD, PUN-Y-BCRD, PUN-Y-INJ, PUN-Y-LO, PUN-Y-PCT, PUN-Y-POTR]
@@ -49,6 +51,7 @@ output:
     recal.gvcf: false
     recal.bam: false
     reference: true
+    annotation: true
     callset:
       redyellow:
         samples: [PUN-R-ELF, PUN-R-JMC, PUN-R-LH, PUN-R-MT, PUN-R-UCSD, PUN-Y-BCRD, PUN-Y-INJ, PUN-Y-LO, PUN-Y-PCT, PUN-Y-POTR]

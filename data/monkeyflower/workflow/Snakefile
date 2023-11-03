@@ -230,6 +230,11 @@ if "output" in config.keys():
                 samplealias=sampleinfo.SampleAlias.values,
             )
         )
+        if "annotation" in config.keys():
+            results.append(f"{roi}/{config['annotation']}")
+        if "repeatlibrary" in config.keys():
+            results.append(f'{roi}/{config["reference"]}.masked.out.gff')
+            results.append(f'{roi}/{config["reference"]}.{config["repeatlibrary"]}.out.gff')
         results.append(f"{roi}/multiqc_report.html")
         all_results[key] = results
 
@@ -1264,6 +1269,47 @@ rule bcftools_stats:
         bcftools stats {input.vcf} > {output.stats}
         """
 
+##############################
+# Subset reference sequences to roi
+##############################
+rule gff_to_roi:
+    """Convert gff files to roi"""
+    output:
+        gff="{roi}/{prefix}.gff",
+    input:
+        gff="{prefix}.gff",
+        bed="{roi}/{roi}.bed",
+        fasta=f"{config['reference']}.genomebed.txt",
+    envmodules:
+        *get_envmodules("bedtools"),
+    conda:
+        "envs/environment.yml",
+    benchmark:
+        "benchmarks/gff_to_roi/{roi}/{prefix}.gff.benchmark.txt",
+    log:
+        "logs/gff_to_roi/{roi}/{prefix}.gff.log",
+    threads: 1
+    shell:
+        """
+        bedtools intersect -a {input.gff} -b {input.bed} > {output.gff}
+        """
+
+
+rule bedtools_genome_file:
+    """Make bedtools genome file"""
+    output:
+        txt="{prefix}.fasta.genomebed.txt",
+    input:
+        fasta="{prefix}.fasta",
+    conda:
+        "envs/environment.yml",
+    benchmark: "benchmarks/bedtools_genome_file/{prefix}.fasta.genomebed.txt.benchmark.txt",
+    log: "logs/bedtools_genome_file/{prefix}.fasta.genomebed.txt.log",
+    threads: 1
+    shell:
+        """
+        cut -f 1,2 {input.fasta} > {output.txt}
+        """
 
 ##############################
 # Make save script
@@ -1292,9 +1338,10 @@ rule make_roi_save_script:
         recal_bam=lambda wildcards: f'--include "*.recal.ba[mi]"'
         if config["output"][wildcards.roi]["recal.bam"]
         else "",
-        reference=lambda wildcards: f'--include "{config["reference"]}"'
+        reference=lambda wildcards: f'--include "{config["reference"]}*"'
         if config["output"][wildcards.roi]["reference"]
         else "",
+        annotation=lambda wildcards: f'--include "{config["annotation"]}*"' if config["output"][wildcards.roi]["annotation"] else "",
         outdir=lambda wildcards: config["output"][wildcards.roi]["relpath"],
     log:
         "logs/{roi}/save.log",
@@ -1303,10 +1350,18 @@ rule make_roi_save_script:
         """
         echo "#/bin/bash" > {output.sh};
         echo 'OPTIONS=\"$@\"' >> {output.sh};
-        echo 'rsync -amv ${{OPTIONS}} --include=\"*/\" {params.ubam}\
-            {params.fastq} {params.reference} {params.recal_gvcf} {params.recal_bam}\
-            --include *sites.vcf.gz* --include *combine.g.vcf.gz* \
-            --exclude=\"*\" {wildcards.roi} {params.outdir}' >> {output.sh};
+        echo 'rsync -amv ${{OPTIONS}} \\\n
+            --include=\"*/\" \\\n
+            {params.ubam} \\\n
+            {params.fastq} \\\n
+            {params.reference} \\\n
+            {params.recal_gvcf} \\\n
+            {params.recal_bam} \\\n
+            {params.annotation} \\\n
+            --include *sites.vcf.gz* \\\n
+            --include *combine.g.vcf.gz* \\\n
+        --exclude=\"*\" \\\n
+        {wildcards.roi} {params.outdir}' >> {output.sh};
         chmod +x {output.sh}
         """
 
@@ -1315,4 +1370,4 @@ ruleorder: make_ubam_for_roi > samtools_index_bam
 
 
 localrules:
-    download_sraruninfo, csvtk_compile_vcftools_stats
+    download_sraruninfo, csvtk_compile_vcftools_stats, bedtools_genome_file, gff_to_roi
