@@ -2,3 +2,8 @@
 .envrc
 work/
 /PRJNA549183/
+data/
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+.pixi*

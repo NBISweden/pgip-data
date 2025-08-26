@@ -1,57 +1,86 @@
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
-    hooks:
-      - id: check-merge-conflict
-      - id: debug-statements
-      - id: mixed-line-ending
-        exclude: |
-          (?x)^(
-          data/ooa-outgroups/ooa.chr21.ts |
-          data/ooa-outgroups/ooa.chr22.ts
-          )$
-      - id: check-case-conflict
-      - id: check-yaml
-      - id: trailing-whitespace
-        exclude: |
-          (?x)^(
-          data/ooa-outgroups/ooa.chr21.ts |
-          data/ooa-outgroups/ooa.chr22.ts
-          )$
-  - repo: https://github.com/asottile/reorder_python_imports
-    rev: v3.12.0
-    hooks:
-      - id: reorder-python-imports
-        args: [--application-directories=python,
-               --unclassifiable-application-module=_tskit]
-  - repo: https://github.com/asottile/pyupgrade
-    rev: v3.15.0
-    hooks:
-      - id: pyupgrade
-        args: [--py3-plus, --py37-plus]
-  - repo: https://github.com/psf/black
-    rev: 23.10.1
-    hooks:
-      - id: black
-        language_version: python3
-  - repo: https://github.com/PyCQA/flake8
-    rev: 6.1.0
-    hooks:
-      - id: flake8
-        args: [--max-line-length=89]
-        additional_dependencies: ["flake8-bugbear==22.3.23", "flake8-builtins==1.5.3"]
-  - repo: https://github.com/asottile/blacken-docs
-    rev: 1.16.0
-    hooks:
-      - id: blacken-docs
-        args: [--skip-errors]
-        additional_dependencies: [black==22.3.0]
-        language_version: python3
   - repo: local
     hooks:
-      - id: lint
-        name: Snakemake lint monkeyflower workflow
-        entry: snakemake --lint text --directory data/monkeyflower -s
+      - id: check-yaml
+        name: Check YAML
+        entry: pixi run --environment=lint check-yaml
         language: system
-        log_file: 'snakemake-monkeyflower-lint.txt'
-        files: 'data/monkeyflower/workflow/Snakefile'
+        types: [yaml]
+        stages: [pre-commit, manual]
+      - id: end-of-file
+        name: Check end-of-file
+        entry: pixi run --environment=lint end-of-file-fixer
+        language: system
+        types: [text]
+        stages: [pre-commit, manual]
+      - id: trailing-whitespace
+        name: Fix trailing whitespace
+        entry: pixi run --environment=lint trailing-whitespace-fixer
+        language: system
+        types: [text]
+        stages: [pre-commit, manual]
+      # Use ruff for python examples
+      - id: ruff
+        name: Ruff lint
+        entry: pixi run --environment=lint ruff-lint
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+        stages: [pre-commit, manual]
+      - id: ruff-format
+        name: Ruff format
+        entry: pixi run --environment=lint ruff-format
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+        stages: [pre-commit, manual]
+      # shfmt
+      - id: shfmt
+        name: Format shell scripts
+        entry: pixi run --environment=lint shell-format
+        language: system
+        types: [shell]
+        stages: [pre-commit, manual]
+      # Shellcheck
+      - id: shellcheck
+        name: Check shell scripts
+        entry: pixi run --environment=lint shellcheck
+        language: system
+        types: [shell]
+        stages: [pre-commit, manual]
+      # GitHub Actions
+      - id: actionlint
+        name: Lint GitHub Actions workflow files
+        language: system
+        entry: pixi run --environment=lint actionlint
+        types: [yaml]
+        files: ^\.github/workflows/
+        stages: [pre-commit, manual]
+      # TOML format
+      - id: toml-format
+        name: TOML format
+        entry: pixi run --environment=lint toml-format
+        language: system
+        types: [file, toml]
+        exclude: "schema/examples/invalid"
+        stages: [pre-commit, manual]
+      - id: yaml-format
+        name: YAML format
+        entry: pixi run --environment=lint prettier-fmt
+        language: system
+        types: [file, yaml]
+        stages: [pre-commit, manual]
+      # - id: snakemake-lint
+      #   name: Snakemake lint monkeyflower workflow
+      #   entry: snakemake --lint text --directory data/monkeyflower -s
+      #   language: system
+      #   log_file: "snakemake-monkeyflower-lint.txt"
+      #   files: "data/monkeyflower/workflow/Snakefile"
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.18.1
+    hooks:
+      - id: markdownlint-cli2
+        files: \.(md|qmd)$
+        types: [file]
+        exclude: LICENSE.md
