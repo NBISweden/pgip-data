@@ -13,6 +13,13 @@ Monkeyflower examples have been generated with command
 The workflow/local directory holds a configuration file for a
 snakemake profile that sets some useful snakemake options.
 
+## On RepeatMasker
+
+The RepeatMasker library must be configured in the RepeatMasker
+installation directory with the command
+
+perl ./configure
+
 ## On SRA identifiers
 
 Before any analyses can be run, the workflow will attempt to download
@@ -63,6 +70,31 @@ and lane number, so is unique for a srarun.
 
 SM: sample name; could be any of srasample, samplename or sample
 (alias).
+
+## On missing sampleinfo.csv
+
+The version controlled sampleinfo.csv can be copied to the bioproject directory
+to enable custom naming and grouping of samples.
+
+## Generating output in work directory
+
+To generate output in the work directory, first setup some of the version
+controlled files:
+
+```bash
+mkdir -p work/tiny work/small
+cd work/tiny
+ln -s ../../tiny/*gff
+cd ../small
+ln -s ../../small/*gff
+
+This is a hack that shouldn't be necessary. Alternatively, it could be possible
+to first run the rule download_datasources.
+
+Also the config directory, sample csv files, and bioproject need to be linked /
+initiated. Then the following should work:
+
+```bash snakemake -d work --cores 20 --ri --keep-going ```
 
 """
 import os
@@ -164,7 +196,6 @@ wildcard_constraints:
     srrun="(" + "|".join(sampleinfo.Run.values) + ")",
     srsample="(" + "|".join(sampleinfo.Sample.values) + ")",
     stat="(" + "|".join(VCFTOOLS_STATS.keys()) + ")",
-
 
 all_results = dict(
     sampleinfo=["SraRunInfo.csv"],
@@ -372,6 +403,8 @@ rule build_database:
         ),
     input:
         config["reference"],
+    params:
+        db=config["repeatlibrary"],
     envmodules:
         *get_envmodules("repeatmasker"),
     conda:
@@ -383,7 +416,7 @@ rule build_database:
     threads: 1
     shell:
         """
-        BuildDatabase -name {output} -engine ncbi {input} > {log} 2>&1
+        BuildDatabase -name {params.db} {input} > {log} 2>&1
         """
 
 
@@ -423,7 +456,7 @@ rule repeat_masker_get_dfam_curated:
     example.
 
         wget https://www.dfam.org/releases/Dfam_3.7/families/Dfam_curatedonly.h5.gz -O $(dirname $(readlink -f $(which RepeatMasker)))
-    """
+ht    """
     output:
         h5="Libraries/Dfam.h5",
     input:
@@ -432,6 +465,7 @@ rule repeat_masker_get_dfam_curated:
         ),
     params:
         dfam="Libraries/dfam_curated.h5.gz",
+        dfam_unzipped="Libraries/dfam_curated.h5",
     conda:
         "envs/repeatmasker.yml"
     benchmark:
@@ -442,8 +476,8 @@ rule repeat_masker_get_dfam_curated:
     shell:
         """
         wget {input.dfam_curated} -O {params.dfam} > {log} 2>&1
-        gzip -dv {params.dfam} >> {log} 2>&1
-        mv {params.dfam} {output.h5}
+        gzip -fdv {params.dfam} >> {log} 2>&1
+        mv {params.dfam_unzipped} {output.h5}
         """
 
 
@@ -501,7 +535,7 @@ rule repeat_masker_custom:
     shell:
         """
         RepeatMasker -lib {input.lib} -gff -pa {threads} -a -xsmall {input.ref} > {log} 2>&1
-        rename "s/{params.ref}.masked/{params.ref}.{wildcards.lib}/g" {input.ref}.*
+        rename {params.ref}.masked {params.ref}.{wildcards.lib} {input.ref}.*
         """
 
 
@@ -595,16 +629,16 @@ rule bwa_mem_srrinput:
         "benchmarks/{samplealias}/{srrun}.sort.md.bam.benchmark.txt"
     log:
         "logs/{samplealias}/{srrun}.sort.md.bam.log",
-    threads: 14
+    threads: 30
     priority: 10
     shell:
         """
         fasterq-dump --skip-technical -Z --split-spot {input.srr} |
-            bwa mem {params.rg} -p -t {threads} {params.options} {input.reference} - |
+            bwa mem {params.rg} -p -t {threads} {params.options} {input.reference} - 2>> {log}|
             samtools fixmate -m - /dev/stdout |
             samtools sort - | samtools markdup - /dev/stdout |
-            samtools view -h -b -o {output.bam} 2> {log}
-        samtools index {output.bam} > {log} 2>&1
+            samtools view -h -b -o {output.bam} > {log} 2>&1
+        samtools index {output.bam} >> {log} 2>&1
         """
 
 
@@ -632,7 +666,7 @@ rule bwa_mem_ubam_to_roi:
         "benchmarks/bwa_mem_ubam_to_roi/{roi}/{samplealias}/{samplealias}.bam.benchmark.txt"
     log:
         "logs/bwa_mem_ubam_to_roi/{roi}/{samplealias}/{samplealias}.bam.log",
-    threads: 14
+    threads: 30
     shell:
         """
             samtools fastq {input.bam} 2> {log}|
@@ -800,6 +834,7 @@ rule rename_ubam_sample:
     log:
         "logs/rename_ubam_sample/{roi}/{samplealias}/{samplealias}.unmapped.bam.log",
     threads: 1
+    priority: 400
     shell:
         """
         samtools view -H {input.bam} | sed "s/SM:[^\t]*/SM:{params.sample}/g" | samtools reheader - {input.bam} > {output.bam}

@@ -1,12 +1,6 @@
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra -q --doctest-modules"
-pythonpath = [
-    "."
-]
-testpaths = [
-    "tests",
-]
-filterwarnings = [
-    "ignore::DeprecationWarning",
-]
+pythonpath = ["."]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

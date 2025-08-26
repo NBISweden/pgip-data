@@ -5,7 +5,7 @@ selection and gene flow shape the genomic landscape during a radiation
 of monkeyflowers" by Stankowski et al, PLoS Biology, 2019.
 
 samples.csv was manually created from
-https://doi.org/10.1371/journal.pbio.3000391.s003
+<https://doi.org/10.1371/journal.pbio.3000391.s003>
 
 ## Workflow
 

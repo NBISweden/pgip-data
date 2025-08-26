@@ -6,10 +6,13 @@ include: "custom-common.smk"
 try:
     sampleinfo = pd.read_csv(os.path.join(config["bioproject"], "sampleinfo.csv"))
 except Exception as e:
-    logging.error(
-        "CUSTOM: No sampleinfo.csv available yet! Rerun workflow once it has been downloaded"
+    logging.warning(
+        "CUSTOM: No sampleinfo.csv available yet! "
+        "Download SraRunInfo.csv, generate sampleinfo.csv "
+        "and copy sampleinfo.csv to %s", config["bioproject"]
     )
-    pass
+    import time
+    time.sleep(5)
 
 
 results = ["sampleinfo.csv"]
