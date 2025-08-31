@@ -45,6 +45,7 @@ rsync -amv "${OPTIONS[@]}" \
     --exclude="*.after*" \
     --exclude="*.table" \
     --exclude="*" \
+    "${INPUT_DIRECTORY}/md" \
     "${INPUT_DIRECTORY}/gatk-bqsr" \
     "${INPUT_DIRECTORY}/gatk-hc-bqsr" \
     "${INPUT_DIRECTORY}/ubam" \
