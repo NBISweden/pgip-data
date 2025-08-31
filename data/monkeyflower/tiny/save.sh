@@ -35,9 +35,17 @@ echo running rsync -amv "${OPTIONS[@]}" "${INPUT_DIRECTORY}" ...
 
 rsync -amv "${OPTIONS[@]}" \
     --include="*/" \
+    --include="*.ba[im]" \
+    --include="M_aurantiacus*" \
+    --include="*.vcf.gz*" \
+    --include="*.gff" \
+    --include="*.fastq.gz" \
     --exclude="*.subset.vcf.gz*" \
     --exclude="*.vcf.gz.bcftools.stats" \
+    --exclude="*.after*" \
+    --exclude="*.table" \
     --exclude="*" \
+    "${INPUT_DIRECTORY}/gatk-bqsr" \
     "${INPUT_DIRECTORY}/gatk-hc-bqsr" \
     "${INPUT_DIRECTORY}/ubam" \
     "${INPUT_DIRECTORY}/fastq" \
