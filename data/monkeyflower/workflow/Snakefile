@@ -941,8 +941,8 @@ rule gatk_haplotypecaller:
 rule gatk_raw_or_bqsr_variant_filtration:
     """Filter raw or bqsr variants"""
     output:
-        vcf="{roi}{sep}gatk-filter-{callmode}/{samplealias}{mode}.vcf.gz",
-        tbi="{roi}{sep}gatk-filter-{callmode}/{samplealias}{mode}.vcf.gz.tbi",
+        vcf="{roi}{sep}gatk-hc-filter-{callmode}/{samplealias}{mode}.vcf.gz",
+        tbi="{roi}{sep}gatk-hc-filter-{callmode}/{samplealias}{mode}.vcf.gz.tbi",
     input:
         vcf="{roi}{sep}gatk-hc-{callmode}/{samplealias}{mode}.vcf.gz",
     params:
@@ -950,9 +950,9 @@ rule gatk_raw_or_bqsr_variant_filtration:
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/gatk_raw_variant_filtration/{roi}{sep}gatk-filter-{callmode}/{samplealias}{mode}.vcf.gz.benchmark.txt"
+        "benchmarks/gatk_raw_variant_filtration/{roi}{sep}gatk-hc-filter-{callmode}/{samplealias}{mode}.vcf.gz.benchmark.txt"
     log:
-        "logs/gatk_raw_variant_filtration/{roi}{sep}gatk-filter-{callmode}/{samplealias}{mode}.vcf.gz.log",
+        "logs/gatk_raw_variant_filtration/{roi}{sep}gatk-hc-filter-{callmode}/{samplealias}{mode}.vcf.gz.log",
     threads: 1
     shell:
         """
@@ -1002,6 +1002,49 @@ rule gatk_apply_bqsr:
     shell:
         """
         gatk ApplyBQSR -bqsr {input.table} -I {input.bam} -O {output.recal} > {log} 2>&1
+        """
+
+
+rule gatk_base_recalibrator_after:
+    """Generate calibrated table for recalibrated BAM file"""
+    output:
+        table="{roi}{sep}gatk-bqsr/{samplealias}.after.table",
+    input:
+        bam="{roi}{sep}gatk-bqsr/{samplealias}.bam",
+        bai="{roi}{sep}gatk-bqsr/{samplealias}.bai",
+        known_sites=expand("{{roi}}{{sep}}gatk-hc-filter-raw/{samplealias}.g.vcf.gz", samplealias=sampleinfo.SampleAlias.values),
+        ref=os.path.join("{roi}", "ref", config["reference"]),
+    params:
+        known_sites=lambda wildcards, input: ' '.join([f'--known-sites {x}' for x in input.known_sites]),
+    conda:
+        "envs/environment.yml"
+    benchmark: "benchmarks/gatk_base_recalibrator_after/{roi}{sep}gatk-bqsr/{samplealias}.after.table.benchmark.txt",
+    log: "logs/gatk_base_recalibrator_after/{roi}{sep}gatk-bqsr/{samplealias}.after.table.log",
+    threads: 1
+    shell:
+        """
+        gatk BaseRecalibrator -I {input.bam} -R {input.ref} {params.known_sites} -O {output.table} > {log} 2>&1
+        """
+
+
+rule gatk_analyze_covariates:
+    """Analyze covariates from before and after bqsr"""
+    output:
+        csv="{roi}{sep}gatk-bqsr/{samplealias}.after.csv",
+        pdf="{roi}{sep}gatk-bqsr/{samplealias}.after.pdf",
+    input:
+        before="{roi}{sep}gatk-bqsr/{samplealias}.table",
+        after="{roi}{sep}gatk-bqsr/{samplealias}.after.table",
+    conda:
+        "envs/environment.yml"
+    benchmark: "benchmarks/gatk_analyze_covariates/{roi}{sep}gatk-bqsr/{samplealias}.after.csv.benchmark.txt",
+    log: "logs/gatk_analyze_covariates/{roi}{sep}gatk-bqsr/{samplealias}.after.csv.log",
+    threads: 1
+    shell:
+        """
+        gatk AnalyzeCovariates --before-report-file {input.before} \
+        --after-report-file {input.after} --plots-report-file {output.pdf} \
+        --intermediate-csv-file {output.csv} > {log} 2>&1
         """
 
 

@@ -160,6 +160,9 @@ def multiqc_roi_input(wildcards):
     results["markdups"] = _expand_fmt(f"{fmt}.dup_metrics.txt", "md")
     fmt = f"{wildcards.roi}/vcftools-{{callmode}}/{{callset}}.allsites.subset.{{stat}}"
     results["vcftools"] = expand(fmt, stat=VCFTOOLS_STATS.keys(), callmode=callmode, callset=callset)
+    if "bqsr" in callmode:
+        fmt = f"{wildcards.roi}/gatk-bqsr/{{samplealias}}.after.csv"
+        results["bqsr_after_table"] = expand(fmt, samplealias=sampleinfo.SampleAlias.values)
     return itertools.chain(*results.values())
 
 
