@@ -69,28 +69,28 @@ def get_samplealias_dict(wildcards):
 
 def get_sequence_fai(wildcards):
     if wildcards.roi == "":
-        path = config["reference"]
+        path = os.path.join("ref", config["reference"])
     else:
-        path = os.path.join(wildcards.roi, config["reference"])
+        path = os.path.join(wildcards.roi, "ref", config["reference"])
     return f"{path}.fai"
 
 
 def get_sequence_dictionary(wildcards):
     if wildcards.roi == "":
-        path = config["reference"]
+        path = os.path.join("ref", config["reference"])
     else:
-        path = os.path.join(wildcards.roi, config["reference"])
+        path = os.path.join(wildcards.roi, "ref", config["reference"])
     return re.sub(".fasta$", ".dict", path)
 
 
 def subset_bam_for_roi_input(wildcards, *, ext=""):
     samplealias = wildcards.samplealias
     srrun = sampleinfo.set_index("SampleAlias").loc[samplealias].Run
-    return f"{samplealias}/{srrun}.sort.md.bam{ext}"
+    return f"bam/{samplealias}/{srrun}.sort.md.bam{ext}"
 
 
 def gatk_raw_or_bqsr_variant_filtration_options(wildcards):
-    if wildcards.raw == ".raw":
+    if wildcards.raw == "-raw":
         options = [
             "--filter-name",
             "FisherStrand",
@@ -173,8 +173,8 @@ def make_roi_save_script_input(wildcards):
 
 def gatk_combine_gvcfs_input(wildcards, tbi=False):
     fmt = (
-        f"{wildcards.roi}{wildcards.sep}{{samplealias}}/{{samplealias}}"
-        ".sort.dup.recal.hc.g.vcf.gz"
+        f"{wildcards.roi}{wildcards.sep}gatk-hc-bqsr/{{samplealias}}"
+        ".g.vcf.gz"
     )
     if tbi:
         fmt = f"{fmt}.tbi"
@@ -197,16 +197,17 @@ def multiqc_roi_input(wildcards):
             samplealias=sampleinfo.SampleAlias.values,
         )
 
-    fmt = f"{wildcards.roi}/{{qc}}/{{{{samplealias}}}}/{{{{samplealias}}}}"
+    fmt = f"{wildcards.roi}/{{qc}}/{{{{samplealias}}}}"
     results = dict()
     results["fastqc"] = _expand_fmt(f"{fmt}_R1_fastqc/summary.txt", "fastqc")
     results["qualimap"] = _expand_fmt(
-        f"{fmt}.sort_stats/genome_results.txt", "qualimap"
+        f"{fmt}_stats/genome_results.txt", "qualimap"
     )
-    results["markdups"] = _expand_fmt(f"{fmt}.sort.dup.dup_metrics.txt", "markdup")
+    results["markdups"] = _expand_fmt(f"{fmt}.dup_metrics.txt", "md")
     fmt = f"{wildcards.roi}/vcftools/all.allsites.subset.{{stat}}"
     results["vcftools"] = expand(fmt, stat=VCFTOOLS_STATS.keys())
-    if len(custom_all) != 0:
+    callsets = config["output"][wildcards.roi]["callset"].keys()
+    if (len(custom_all) != 0) and ("redyellow" in callsets):
         results["vcftools.custom"] = custom_multiqc_roi_input(wildcards)
     return itertools.chain(*results.values())
 

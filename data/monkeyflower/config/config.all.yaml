@@ -1,0 +1,146 @@
+# - Run workflow in separate working directory
+# - Will generate output in working directory
+# - Four dataset sizes
+bioproject: PRJNA549183
+sraruninfo:
+  csvtk.filter2: $LibraryStrategy=="WGS" && $SampleName!="Assembly Plant"
+datasources:
+  samples.docx: https://doi.org/10.1371/journal.pbio.3000391.s003
+  ref/M_aurantiacus_v1_splitline_ordered.fasta: http://mimubase.org/FTP/Genomes/Maurantiacus_v1.0/M_aurantiacus_v1_splitline_ordered.fasta
+  ref/MAUR_annotation_functional_submission.gff: http://mimubase.org/FTP/Genomes/Maurantiacus_v1.0/MAUR_annotation_functional_submission.gff
+reference: M_aurantiacus_v1_splitline_ordered.fasta
+repeatlibrary: mim_repeat_lib_aug10
+species: "Mimulus guttatus"
+annotation: MAUR_annotation_functional_submission.gff
+
+# Output data. Key is output directory, value are output files and
+# configuration settings
+output:
+  tiny:
+    relpath: .
+    roi:
+      - "LG4:12000000-12100000"
+    ubam: true
+    fastq: true
+    recal.gvcf: true
+    recal.bam: true
+    reference: true
+    annotation: true
+    callset:
+      redyellow:
+        samples: [PUN-R-ELF, PUN-R-JMC, PUN-R-LH, PUN-R-MT, PUN-R-UCSD, PUN-Y-BCRD, PUN-Y-INJ, PUN-Y-LO, PUN-Y-PCT, PUN-Y-POTR]
+    filter:
+      all.allsites:
+        miss: 0.75
+        min_depth: 5.5
+        max_depth: 14
+        options: --remove-indels
+      redyellow.allsites:
+        miss: 0.75
+        min_depth: 5
+        max_depth: 12
+        options: --remove-indels
+    plot:
+      all.allsites:
+        ldepth: "--x-min 0 --x-max 800 --y-max 600"
+      redyellow.allsites:
+        ldepth: "--x-min 0 --x-max 300 --y-max 2000"
+  small:
+    relpath: .
+    roi:
+      - "LG4:11000000-14000000"
+    ubam: false
+    fastq: false
+    recal.gvcf: false
+    recal.bam: false
+    reference: true
+    annotation: true
+    callset:
+      redyellow:
+        samples: [PUN-R-ELF, PUN-R-JMC, PUN-R-LH, PUN-R-MT, PUN-R-UCSD, PUN-Y-BCRD, PUN-Y-INJ, PUN-Y-LO, PUN-Y-PCT, PUN-Y-POTR]
+    plot:
+      redyellow.variantsites:
+        ldepth: "--x-min 0 --x-max 200 --y-max 2000"
+    filter:
+      redyellow.variantsites:
+        miss: 0.75
+        qual: 20
+        # Depth filters alone remove 1/3
+        min_depth: 5
+        max_depth: 15
+  full:
+    relpath: .
+    roi:
+      - "LG1:0-20551961"
+      - "LG2:0-24346716"
+      - "LG3:0-20798979"
+      - "LG4:0-18557064"
+      - "LG5:0-25557270"
+      - "LG6:0-15765608"
+      - "LG7:0-17530972"
+      - "LG8:0-20267432"
+      - "LG9:0-14510045"
+      - "LG10:0-17405947"
+    ubam: true
+    fastq: true
+    recal.gvcf: false
+    recal.bam: false
+    reference: true
+    annotation: true
+    callset:
+      all:
+        samples: [LON-T33,LON-T8,PAR-KK161,PAR-KK168,PAR-KK180,PAR-KK182,PUN-Y-BCRD,PUN-R-ELF,PUN-Y-INJ,PUN-R-JMC,PUN-R-LH,PUN-Y-LO,PUN-R-MT,PUN-Y-PCT,PUN-Y-POTR,PUN-R-UCSD,GRA-T96,CAL-T90,CAL-T91,CLV_GH,CLV_11,CLV_4,GRA-T101,GRA-T61,GRA-T99,LON-DPR,ARI-159_83,ARI-159_84,ARI-195_1,ARI-T84,AUR-T102,AUR-T104,AUR-T50,AUR-T92,CAL-T144,CAL-T150,LON-SS]
+  #   filter:
+  #     all.allsites:
+  #       miss: 0.75
+  #       min_depth: 5.5
+  #       max_depth: 14
+  #       options: --remove-indels
+  #   plot:
+  #     all.allsites:
+  #       ldepth: "--x-min 0 --x-max 800 --y-max 600"
+  large:
+    relpath: .
+    roi:
+      - "LG3:0-20798979"
+      - "LG4:0-18557064"
+    ubam: true
+    fastq: true
+    recal.gvcf: false
+    recal.bam: false
+    reference: true
+    annotation: true
+    callset:
+      all:
+        samples: [LON-T33,LON-T8,PAR-KK161,PAR-KK168,PAR-KK180,PAR-KK182,PUN-Y-BCRD,PUN-R-ELF,PUN-Y-INJ,PUN-R-JMC,PUN-R-LH,PUN-Y-LO,PUN-R-MT,PUN-Y-PCT,PUN-Y-POTR,PUN-R-UCSD,GRA-T96,CAL-T90,CAL-T91,CLV_GH,CLV_11,CLV_4,GRA-T101,GRA-T61,GRA-T99,LON-DPR,ARI-159_83,ARI-159_84,ARI-195_1,ARI-T84,AUR-T102,AUR-T104,AUR-T50,AUR-T92,CAL-T144,CAL-T150,LON-SS]
+    # filter:
+    #   all.allsites:
+    #     miss: 0.75
+    #     min_depth: 5.5
+    #     max_depth: 14
+    #     options: --remove-indels
+    # plot:
+    #   all.allsites:
+    #     ldepth: "--x-min 0 --x-max 800 --y-max 600"
+  test:
+    relpath: .
+    roi:
+      - "LG1:0-200000"
+    ubam: true
+    fastq: true
+    recal.gvcf: true
+    recal.bam: true
+    reference: true
+    annotation: true
+    callset:
+      all:
+        samples: [LON-T33,LON-T8,PAR-KK161,PAR-KK168,PAR-KK180,PAR-KK182,PUN-Y-BCRD,PUN-R-ELF,PUN-Y-INJ,PUN-R-JMC,PUN-R-LH,PUN-Y-LO,PUN-R-MT,PUN-Y-PCT,PUN-Y-POTR,PUN-R-UCSD,GRA-T96,CAL-T90,CAL-T91,CLV_GH,CLV_11,CLV_4,GRA-T101,GRA-T61,GRA-T99,LON-DPR,ARI-159_83,ARI-159_84,ARI-195_1,ARI-T84,AUR-T102,AUR-T104,AUR-T50,AUR-T92,CAL-T144,CAL-T150,LON-SS]
+    filter:
+      all.allsites:
+        miss: 0.75
+        min_depth: 5.5
+        max_depth: 14
+        options: --remove-indels
+    plot:
+      all.allsites:
+        ldepth: "--x-min 0 --x-max 800 --y-max 600"
