@@ -68,6 +68,20 @@ output:
         # Depth filters alone remove 1/3
         min_depth: 5
         max_depth: 15
+  large:
+    relpath: .
+    roi:
+      - "LG3:0-20798979"
+      - "LG4:0-18557064"
+    ubam: true
+    fastq: true
+    recal.gvcf: false
+    recal.bam: false
+    reference: true
+    annotation: true
+    callset:
+      all:
+        samples: [LON-T33,LON-T8,PAR-KK161,PAR-KK168,PAR-KK180,PAR-KK182,PUN-Y-BCRD,PUN-R-ELF,PUN-Y-INJ,PUN-R-JMC,PUN-R-LH,PUN-Y-LO,PUN-R-MT,PUN-Y-PCT,PUN-Y-POTR,PUN-R-UCSD,GRA-T96,CAL-T90,CAL-T91,CLV_GH,CLV_11,CLV_4,GRA-T101,GRA-T61,GRA-T99,LON-DPR,ARI-159_83,ARI-159_84,ARI-195_1,ARI-T84,AUR-T102,AUR-T104,AUR-T50,AUR-T92,CAL-T144,CAL-T150,LON-SS]
   full:
     relpath: .
     roi:
@@ -90,57 +104,3 @@ output:
     callset:
       all:
         samples: [LON-T33,LON-T8,PAR-KK161,PAR-KK168,PAR-KK180,PAR-KK182,PUN-Y-BCRD,PUN-R-ELF,PUN-Y-INJ,PUN-R-JMC,PUN-R-LH,PUN-Y-LO,PUN-R-MT,PUN-Y-PCT,PUN-Y-POTR,PUN-R-UCSD,GRA-T96,CAL-T90,CAL-T91,CLV_GH,CLV_11,CLV_4,GRA-T101,GRA-T61,GRA-T99,LON-DPR,ARI-159_83,ARI-159_84,ARI-195_1,ARI-T84,AUR-T102,AUR-T104,AUR-T50,AUR-T92,CAL-T144,CAL-T150,LON-SS]
-  #   filter:
-  #     all.allsites:
-  #       miss: 0.75
-  #       min_depth: 5.5
-  #       max_depth: 14
-  #       options: --remove-indels
-  #   plot:
-  #     all.allsites:
-  #       ldepth: "--x-min 0 --x-max 800 --y-max 600"
-  large:
-    relpath: .
-    roi:
-      - "LG3:0-20798979"
-      - "LG4:0-18557064"
-    ubam: true
-    fastq: true
-    recal.gvcf: false
-    recal.bam: false
-    reference: true
-    annotation: true
-    callset:
-      all:
-        samples: [LON-T33,LON-T8,PAR-KK161,PAR-KK168,PAR-KK180,PAR-KK182,PUN-Y-BCRD,PUN-R-ELF,PUN-Y-INJ,PUN-R-JMC,PUN-R-LH,PUN-Y-LO,PUN-R-MT,PUN-Y-PCT,PUN-Y-POTR,PUN-R-UCSD,GRA-T96,CAL-T90,CAL-T91,CLV_GH,CLV_11,CLV_4,GRA-T101,GRA-T61,GRA-T99,LON-DPR,ARI-159_83,ARI-159_84,ARI-195_1,ARI-T84,AUR-T102,AUR-T104,AUR-T50,AUR-T92,CAL-T144,CAL-T150,LON-SS]
-    # filter:
-    #   all.allsites:
-    #     miss: 0.75
-    #     min_depth: 5.5
-    #     max_depth: 14
-    #     options: --remove-indels
-    # plot:
-    #   all.allsites:
-    #     ldepth: "--x-min 0 --x-max 800 --y-max 600"
-  test:
-    relpath: .
-    roi:
-      - "LG1:0-200000"
-    ubam: true
-    fastq: true
-    recal.gvcf: true
-    recal.bam: true
-    reference: true
-    annotation: true
-    callset:
-      all:
-        samples: [LON-T33,LON-T8,PAR-KK161,PAR-KK168,PAR-KK180,PAR-KK182,PUN-Y-BCRD,PUN-R-ELF,PUN-Y-INJ,PUN-R-JMC,PUN-R-LH,PUN-Y-LO,PUN-R-MT,PUN-Y-PCT,PUN-Y-POTR,PUN-R-UCSD,GRA-T96,CAL-T90,CAL-T91,CLV_GH,CLV_11,CLV_4,GRA-T101,GRA-T61,GRA-T99,LON-DPR,ARI-159_83,ARI-159_84,ARI-195_1,ARI-T84,AUR-T102,AUR-T104,AUR-T50,AUR-T92,CAL-T144,CAL-T150,LON-SS]
-    filter:
-      all.allsites:
-        miss: 0.75
-        min_depth: 5.5
-        max_depth: 14
-        options: --remove-indels
-    plot:
-      all.allsites:
-        ldepth: "--x-min 0 --x-max 800 --y-max 600"
