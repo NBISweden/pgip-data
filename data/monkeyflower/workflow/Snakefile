@@ -257,13 +257,13 @@ if "output" in config.keys():
                 sites=["variantsites", "allsites"],
             )
         )
-        # if "filter" in obj.keys():
-        #     for cs_sites, filt in obj["filter"].items():
-        #         results.append(
-        #             os.path.join(
-        #                 f"{roi}", "gatk-genotype-gvcf", f"{cs_sites}.vcftools.filtered.vcf.gz.bcftools.stats"
-        #             )
-        #         )
+        if "filter" in obj.keys():
+            for cs_sites, filt in obj["filter"].items():
+                results.append(
+                    os.path.join(
+                        f"{roi}/vcftools-filter/{cs_sites}.vcf.gz",
+                    )
+                )
         results.extend(
             expand(
                 f"{roi}/vcftools/{{callset}}.{{sites}}.subset.{{stat}}.{{ext}}",
@@ -289,13 +289,6 @@ if "output" in config.keys():
             expand(
                 f"{roi}/bam/{{samplealias}}.bam",
                 samplealias=sampleinfo.SampleAlias.values,
-            )
-        )
-        scratch_input.extend(
-            expand(
-                os.path.join(f"{roi}/gatk-genotype-gvcf/{{callset}}.{{sites}}.vcf.gz.bcftools.stats"),
-                callset=callset_roi + ["all"],
-                sites=["variantsites", "allsites"],
             )
         )
         if "annotation" in config.keys():
@@ -334,9 +327,6 @@ rule datasources_all:
 rule repeats_all:
     """Pseudo-rule to generate repeat library. Run in repeatmodeler environment"""
     input: "rm/M_aurantiacus_v1_splitline_ordered.fasta.mim_repeat_lib_aug10.out"
-
-rule scratch:
-    input: scratch_input
 
 ##############################
 # SRR module
