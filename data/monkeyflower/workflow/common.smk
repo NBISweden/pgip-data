@@ -90,7 +90,7 @@ def subset_bam_for_roi_input(wildcards, *, ext=""):
 
 
 def gatk_raw_or_bqsr_variant_filtration_options(wildcards):
-    if wildcards.raw == "-raw":
+    if wildcards.callmode == "raw":
         options = [
             "--filter-name",
             "FisherStrand",
@@ -124,56 +124,9 @@ def gatk_raw_or_bqsr_variant_filtration_options(wildcards):
     return " ".join(options)
 
 
-def make_roi_save_script_input(wildcards):
-    roi = config["output"][wildcards.roi]
-    data = [os.path.join(wildcards.roi, "all.allsites.vcf.gz")]
-    if roi["ubam"]:
-        data.extend(
-            expand(
-                f"{wildcards.roi}/{{srrun}}/{{srrun}}.{{samplealias}}.unmapped.bam",
-                zip,
-                srrun=sampleinfo.Run.values,
-                samplealias=sampleinfo.SampleAlias.values,
-            )
-        )
-        data.extend(
-            expand(
-                f"{wildcards.roi}/{{srrun}}/{{srrun}}.{{samplealias}}.unmapped.bam.bai",
-                zip,
-                srrun=sampleinfo.Run.values,
-                samplealias=sampleinfo.SampleAlias.values,
-            )
-        )
-    if roi["fastq"]:
-        data.extend(
-            expand(
-                f"{wildcards.roi}/{{srrun}}/{{srrun}}.{{samplealias}}_R1.fastq.gz",
-                zip,
-                srrun=sampleinfo.Run.values,
-                samplealias=sampleinfo.SampleAlias.values,
-            )
-        )
-        data.extend(
-            expand(
-                f"{wildcards.roi}/{{srrun}}/{{srrun}}.{{samplealias}}_R2.fastq.gz",
-                zip,
-                srrun=sampleinfo.Run.values,
-                samplealias=sampleinfo.SampleAlias.values,
-            )
-        )
-    if roi["reference"]:
-        data.append(os.path.join(wildcards.roi, config["reference"]))
-    if "annotation" in config.keys():
-        data.append(os.path.join(wildcards.roi, config['annotation']))
-    if "repeatlibrary" in config.keys():
-        results.append(os.path.join(wildcards.roi, f'{config["reference"]}.masked.out.gff'))
-        results.append(os.path.join(wildcards.roi, f'{config["reference"]}.{config["repeatlibrary"]}.out.gff'))
-    return data
-
-
 def gatk_combine_gvcfs_input(wildcards, tbi=False):
     fmt = (
-        f"{wildcards.roi}{wildcards.sep}gatk-hc-bqsr/{{samplealias}}"
+        f"{wildcards.roi}{wildcards.sep}gatk-hc-{wildcards.callmode}/{{samplealias}}"
         ".g.vcf.gz"
     )
     if tbi:
@@ -196,7 +149,8 @@ def multiqc_roi_input(wildcards):
             fmt,
             samplealias=sampleinfo.SampleAlias.values,
         )
-
+    callmode = config["output"][wildcards.roi]["callmode"]
+    callset = config["output"][wildcards.roi]["callset"].keys()
     fmt = f"{wildcards.roi}/{{qc}}/{{{{samplealias}}}}"
     results = dict()
     results["fastqc"] = _expand_fmt(f"{fmt}_R1_fastqc/summary.txt", "fastqc")
@@ -204,11 +158,8 @@ def multiqc_roi_input(wildcards):
         f"{fmt}_stats/genome_results.txt", "qualimap"
     )
     results["markdups"] = _expand_fmt(f"{fmt}.dup_metrics.txt", "md")
-    fmt = f"{wildcards.roi}/vcftools/all.allsites.subset.{{stat}}"
-    results["vcftools"] = expand(fmt, stat=VCFTOOLS_STATS.keys())
-    callsets = config["output"][wildcards.roi]["callset"].keys()
-    if (len(custom_all) != 0) and ("redyellow" in callsets):
-        results["vcftools.custom"] = custom_multiqc_roi_input(wildcards)
+    fmt = f"{wildcards.roi}/vcftools-{{callmode}}/{{callset}}.allsites.subset.{{stat}}"
+    results["vcftools"] = expand(fmt, stat=VCFTOOLS_STATS.keys(), callmode=callmode, callset=callset)
     return itertools.chain(*results.values())
 
 

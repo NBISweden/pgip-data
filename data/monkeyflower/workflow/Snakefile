@@ -208,6 +208,7 @@ if sampleinfo is None:
 wildcard_constraints:
     bam="(bam|ubam)",
     callset="all",
+    callmode="(raw|bqsr)",
     roi="(|" + "|".join([x for x in config.get("output", {}).keys()]) + ")",
     sep="(|/)",
     samplealias="(" + "|".join(sampleinfo.SampleAlias.values) + ")",
@@ -244,33 +245,34 @@ scratch_input = []
 
 if "output" in config.keys():
     for roi, obj in config["output"].items():
+        callmode = obj.get("callmode", ["raw"])
         callset_roi = list(obj.get("callset", {}).keys())
         callset.extend(callset_roi)
         key = f"output.{roi}"
-        results = [
-            os.path.join(f"{roi}", "save.sh"),
-        ]
         results.extend(
             expand(
-                os.path.join(f"{roi}/gatk-genotype-gvcf/{{callset}}.{{sites}}.vcf.gz.bcftools.stats"),
+                f"{roi}/gatk-genotype-gvcf-{{callmode}}/{{callset}}.{{sites}}.vcf.gz.bcftools.stats",
                 callset=callset_roi + ["all"],
                 sites=["variantsites", "allsites"],
+                callmode=callmode,
             )
         )
         if "filter" in obj.keys():
             for cs_sites, filt in obj["filter"].items():
-                results.append(
-                    os.path.join(
-                        f"{roi}/vcftools-filter/{cs_sites}.vcf.gz",
+                results.extend(
+                    expand(
+                        f"{roi}/vcftools-filter-{{callmode}}/{cs_sites}.vcf.gz",
+                        callmode=callmode,
                     )
                 )
         results.extend(
             expand(
-                f"{roi}/vcftools/{{callset}}.{{sites}}.subset.{{stat}}.{{ext}}",
+                f"{roi}/vcftools-{{callmode}}/{{callset}}.{{sites}}.subset.{{stat}}.{{ext}}",
                 stat=VCFTOOLS_STATS.keys(),
                 ext=["tab", "png"],
                 sites=["allsites", "variantsites"],
                 callset=callset_roi + ["all"],
+                callmode=callmode,
             )
         )
         results.extend(
@@ -300,7 +302,6 @@ if "output" in config.keys():
         all_results[key] = results
 
     if len(callset) > 0:
-
         wildcard_constraints:
             callset="(" + "|".join([x for x in set(callset)]) + ")",
 
@@ -870,6 +871,7 @@ rule picard_mark_duplicates:
     """Mark duplicates with picard"""
     output:
         bam="{roi}/md/{samplealias}.bam",
+        bai="{roi}/md/{samplealias}.bai",
         metrics="{roi}/md/{samplealias}.dup_metrics.txt",
     input:
         bam="{roi}/bam/{samplealias}.bam",
@@ -878,9 +880,9 @@ rule picard_mark_duplicates:
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/picard_mark_duplicates/{roi}/{samplealias}/{samplealias}.sort.dup.bam.benchmark.txt"
+        "benchmarks/picard_mark_duplicates/{roi}/md/{samplealias}.bam.benchmark.txt"
     log:
-        "logs/picard_mark_duplicates/{roi}/{samplealias}/{samplealias}.sort.dup.bam.log",
+        "logs/picard_mark_duplicates/{roi}/md/{samplealias}/{samplealias}.bam.log",
     threads: 1
     shell:
         """
@@ -895,11 +897,11 @@ rule picard_mark_duplicates:
 rule gatk_haplotypecaller:
     """Run GATK HaplotypeCaller"""
     output:
-        vcf="{roi}{sep}gatk-hc{raw}/{samplealias}{mode}.vcf.gz",
-        tbi="{roi}{sep}gatk-hc{raw}/{samplealias}{mode}.vcf.gz.tbi",
+        vcf="{roi}{sep}gatk-hc-{callmode}/{samplealias}{mode}.vcf.gz",
+        tbi="{roi}{sep}gatk-hc-{callmode}/{samplealias}{mode}.vcf.gz.tbi",
     input:
-        bam="{roi}{sep}bam/{samplealias}.bam",
-        bai="{roi}{sep}bam/{samplealias}.bam.bai",
+        bam=lambda wildcards: "{roi}{sep}bam/{samplealias}.bam" if wildcards.callmode == "raw" else "{roi}{sep}gatk-bqsr/{samplealias}.bam",
+        bai=lambda wildcards: "{roi}{sep}bam/{samplealias}.bam.bai" if wildcards.callmode == "raw" else "{roi}{sep}gatk-bqsr/{samplealias}.bai",
         ref=os.path.join("{roi}", "ref", config["reference"]),
         dict=get_sequence_dictionary,
         fai=get_sequence_fai,
@@ -919,13 +921,12 @@ rule gatk_haplotypecaller:
         ),
     wildcard_constraints:
         mode="(.g|)",
-        raw="(-raw|-bqsr)",
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/gatk_haplotypecaller/{roi}{sep}gatk-hc{raw}/{samplealias}{mode}.vcf.gz.benchmark.txt"
+        "benchmarks/gatk_haplotypecaller/{roi}{sep}gatk-hc-{callmode}/{samplealias}{mode}.vcf.gz.benchmark.txt"
     log:
-        "logs/gatk_haplotypecaller/{roi}{sep}gatk-hc{raw}/{samplealias}{mode}.vcf.gz.log",
+        "logs/gatk_haplotypecaller/{roi}{sep}gatk-hc-{callmode}/{samplealias}{mode}.vcf.gz.log",
     threads: 4
     shell:
         """
@@ -940,20 +941,18 @@ rule gatk_haplotypecaller:
 rule gatk_raw_or_bqsr_variant_filtration:
     """Filter raw or bqsr variants"""
     output:
-        vcf="{roi}{sep}gatk-filter{raw}/{samplealias}{mode}.vcf.gz",
-        tbi="{roi}{sep}gatk-filter{raw}/{samplealias}{mode}.vcf.gz.tbi",
+        vcf="{roi}{sep}gatk-filter-{callmode}/{samplealias}{mode}.vcf.gz",
+        tbi="{roi}{sep}gatk-filter-{callmode}/{samplealias}{mode}.vcf.gz.tbi",
     input:
-        vcf="{roi}{sep}gatk-hc{raw}/{samplealias}{mode}.vcf.gz",
-    wildcard_constraints:
-        raw="(-raw|-bqsr)",
+        vcf="{roi}{sep}gatk-hc-{callmode}/{samplealias}{mode}.vcf.gz",
     params:
         options=gatk_raw_or_bqsr_variant_filtration_options,
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/gatk_raw_variant_filtration/{roi}{sep}gatk-filter{raw}/{samplealias}{mode}.vcf.gz.benchmark.txt"
+        "benchmarks/gatk_raw_variant_filtration/{roi}{sep}gatk-filter-{callmode}/{samplealias}{mode}.vcf.gz.benchmark.txt"
     log:
-        "logs/gatk_raw_variant_filtration/{roi}{sep}gatk-filter{raw}/{samplealias}{mode}.vcf.gz.log",
+        "logs/gatk_raw_variant_filtration/{roi}{sep}gatk-filter-{callmode}/{samplealias}{mode}.vcf.gz.log",
     threads: 1
     shell:
         """
@@ -1009,8 +1008,8 @@ rule gatk_apply_bqsr:
 rule gatk_combine_gvcfs:
     """Run GATK CombineGVCFs"""
     output:
-        vcf="{roi}{sep}gatk-combine-gvcf/{callset}.g.vcf.gz",
-        tbi="{roi}{sep}gatk-combine-gvcf/{callset}.g.vcf.gz.tbi",
+        vcf="{roi}{sep}gatk-combine-gvcf-{callmode}/{callset}.g.vcf.gz",
+        tbi="{roi}{sep}gatk-combine-gvcf-{callmode}/{callset}.g.vcf.gz.tbi",
     input:
         vcf=lambda wildcards: gatk_combine_gvcfs_input(wildcards),
         tbi=lambda wildcards: gatk_combine_gvcfs_input(wildcards, True),
@@ -1020,9 +1019,9 @@ rule gatk_combine_gvcfs:
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/gatk_combine_gvcfs/{roi}{sep}gatk-combine-gvcf/{callset}.g.vcf.gz.benchmark.txt"
+        "benchmarks/gatk_combine_gvcfs/{roi}{sep}gatk-combine-gvcf-{callmode}/{callset}.g.vcf.gz.benchmark.txt"
     log:
-        "logs/gatk_combine_gvcfs/{roi}{sep}gatk-combine-gvcf/{callset}.g.vcf.gz.log",
+        "logs/gatk_combine_gvcfs/{roi}{sep}gatk-combine-gvcf-{callmode}/{callset}.g.vcf.gz.log",
     threads: 1
     shell:
         """
@@ -1033,17 +1032,17 @@ rule gatk_combine_gvcfs:
 rule gatk_genotype_gvcfs:
     """GATK GenotypeGVCFs"""
     output:
-        vcf="{roi}{sep}gatk-genotype-gvcf/{callset}.allsites.vcf.gz",
-        tbi="{roi}{sep}gatk-genotype-gvcf/{callset}.allsites.vcf.gz.tbi",
+        vcf="{roi}{sep}gatk-genotype-gvcf-{callmode}/{callset}.allsites.vcf.gz",
+        tbi="{roi}{sep}gatk-genotype-gvcf-{callmode}/{callset}.allsites.vcf.gz.tbi",
     input:
-        vcf="{roi}{sep}gatk-combine-gvcf/{callset}.g.vcf.gz",
+        vcf="{roi}{sep}gatk-combine-gvcf-{callmode}/{callset}.g.vcf.gz",
         ref=os.path.join("{roi}", "ref", config["reference"]),
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/gatk_genotype_gvcfs/{roi}{sep}gatk-genotype-gvcf/{callset}.allsites.vcf.gz.benchmark.txt"
+        "benchmarks/gatk_genotype_gvcfs/{roi}{sep}gatk-genotype-gvcf-{callmode}/{callset}.allsites.vcf.gz.benchmark.txt"
     log:
-        "logs/gatk_genotype_gvcfs/{roi}{sep}gatk-genotype-gvcf/{callset}.allsites.log",
+        "logs/gatk_genotype_gvcfs/{roi}{sep}gatk-genotype-gvcf-{callmode}/{callset}.allsites.log",
     threads: 1
     shell:
         """
@@ -1112,7 +1111,7 @@ rule multiqc_roi:
     threads: 1
     shell:
         """
-        multiqc -f {wildcards.roi} --outdir {wildcards.roi} > {log} 2>&1
+        multiqc -d -f {wildcards.roi} --outdir {wildcards.roi} > {log} 2>&1;
         """
 
 
@@ -1124,17 +1123,17 @@ rule multiqc_roi:
 rule bcftools_view_variant_sites:
     """Generate variants only output file"""
     output:
-        vcf="{roi}{sep}gatk-genotype-gvcf/{callset}.variantsites.vcf.gz",
-        tbi="{roi}{sep}gatk-genotype-gvcf/{callset}.variantsites.vcf.gz.tbi",
+        vcf="{roi}{sep}gatk-genotype-gvcf-{callmode}/{callset}.variantsites.vcf.gz",
+        tbi="{roi}{sep}gatk-genotype-gvcf-{callmode}/{callset}.variantsites.vcf.gz.tbi",
     input:
-        vcf="{roi}{sep}gatk-genotype-gvcf/{callset}.allsites.vcf.gz",
-        tbi="{roi}{sep}gatk-genotype-gvcf/{callset}.allsites.vcf.gz.tbi",
+        vcf="{roi}{sep}gatk-genotype-gvcf-{callmode}/{callset}.allsites.vcf.gz",
+        tbi="{roi}{sep}gatk-genotype-gvcf-{callmode}/{callset}.allsites.vcf.gz.tbi",
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/bcftools_view_variant_sites/{roi}{sep}gatk-genotype-gvcf/{callset}.variantsites.vcf.gz.benchmark.txt"
+        "benchmarks/bcftools_view_variant_sites/{roi}{sep}gatk-genotype-gvcf-{callmode}/{callset}.variantsites.vcf.gz.benchmark.txt"
     log:
-        "logs/bcftools_view_variant_sites/{roi}{sep}gatk-genotype-gvcf/{callset}.variantsites.vcf.gz.log",
+        "logs/bcftools_view_variant_sites/{roi}{sep}gatk-genotype-gvcf-{callmode}/{callset}.variantsites.vcf.gz.log",
     threads: 1
     shell:
         """
@@ -1172,20 +1171,20 @@ rule vcflib_subset:
 rule vcftools_stats:
     """Generate vcftools stats for callset"""
     output:
-        stat="{roi}{sep}vcftools/{callset}.{sites}.{stat}",
+        stat="{roi}{sep}vcftools-{callmode}/{callset}.{sites}.{stat}",
     input:
-        vcf="{roi}{sep}gatk-genotype-gvcf/{callset}.{sites}.vcf.gz",
-        tbi="{roi}{sep}gatk-genotype-gvcf/{callset}.{sites}.vcf.gz.tbi",
+        vcf="{roi}{sep}gatk-genotype-gvcf-{callmode}/{callset}.{sites}.vcf.gz",
+        tbi="{roi}{sep}gatk-genotype-gvcf-{callmode}/{callset}.{sites}.vcf.gz.tbi",
     params:
         stat=vcftools_stats,
         options=vcftools_stats_options,
-        out=lambda wildcards: f"{wildcards.roi}{wildcards.sep}vcftools/{wildcards.callset}.{wildcards.sites}",
+        out=lambda wildcards: f"{wildcards.roi}{wildcards.sep}vcftools-{wildcards.callmode}/{wildcards.callset}.{wildcards.sites}",
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/vcftools_stats/{roi}{sep}vcftools/{callset}.{sites}.{stat}.benchmark.txt"
+        "benchmarks/vcftools_stats/{roi}{sep}vcftools-{callmode}/{callset}.{sites}.{stat}.benchmark.txt"
     log:
-        "logs/vcftools_stats/{roi}{sep}vcftools/{callset}.{sites}.{stat}.log",
+        "logs/vcftools_stats/{roi}{sep}vcftools-{callmode}/{callset}.{sites}.{stat}.log",
     threads: 1
     shell:
         """
@@ -1196,19 +1195,19 @@ rule vcftools_stats:
 rule vcftools_filter:
     """Filter vcf file"""
     output:
-        vcf="{roi}/vcftools-filter/{callset}.{sites}.vcf.gz",
-        tbi="{roi}/vcftools-filter/{callset}.{sites}.vcf.gz.tbi",
+        vcf="{roi}/vcftools-filter-{callmode}/{callset}.{sites}.vcf.gz",
+        tbi="{roi}/vcftools-filter-{callmode}/{callset}.{sites}.vcf.gz.tbi",
     input:
-        vcf="{roi}/gatk-genotype-gvcf/{callset}.{sites}.vcf.gz",
-        tbi="{roi}/gatk-genotype-gvcf/{callset}.{sites}.vcf.gz.tbi",
+        vcf="{roi}/gatk-genotype-gvcf-{callmode}/{callset}.{sites}.vcf.gz",
+        tbi="{roi}/gatk-genotype-gvcf-{callmode}/{callset}.{sites}.vcf.gz.tbi",
     params:
         options=vcftools_filter_options,
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/vcftools_filter/{roi}/vcftools-filter/{callset}.{sites}.vcf.gz.benchmark.txt"
+        "benchmarks/vcftools_filter/{roi}/vcftools-filter-{callmode}/{callset}.{sites}.vcf.gz.benchmark.txt"
     log:
-        "logs/vcftools_filter/{roi}/vcftools-filter/{callset}.{sites}.vcf.gz.log",
+        "logs/vcftools_filter/{roi}/vcftools-filter-{callmode}/{callset}.{sites}.vcf.gz.log",
     threads: 1
     shell:
         """
@@ -1220,17 +1219,17 @@ rule vcftools_filter:
 rule csvtk_compile_vcftools_stats:
     """Compile vcftools stats"""
     output:
-        tab="{roi}{sep}vcftools/{callset}.{sites}.{stat}.tab",
+        tab="{roi}{sep}vcftools-{callmode}/{callset}.{sites}.{stat}.tab",
     input:
-        stat="{roi}{sep}vcftools/{callset}.{sites}.{stat}",
+        stat="{roi}{sep}vcftools-{callmode}/{callset}.{sites}.{stat}",
     params:
         options=csvtk_compile_vcftools_stats_options,
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/csvtk_compile_vcftools_stats/{roi}{sep}vcftools/{callset}.{sites}.{stat}.txt.benchmark.txt"
+        "benchmarks/csvtk_compile_vcftools_stats/{roi}{sep}vcftools-{callmode}/{callset}.{sites}.{stat}.txt.benchmark.txt"
     log:
-        "logs/csvtk_compile_vcftools_stats/{roi}{sep}vcftools/{callset}.{sites}.{stat}.txt.log",
+        "logs/csvtk_compile_vcftools_stats/{roi}{sep}vcftools-{callmode}/{callset}.{sites}.{stat}.txt.log",
     threads: 1
     shell:
         """
@@ -1241,18 +1240,18 @@ rule csvtk_compile_vcftools_stats:
 rule csvtk_plot_vcftools_stats:
     """Plot vcftools output"""
     output:
-        png="{roi}{sep}vcftools/{callset}.{sites}.{stat}.png",
+        png="{roi}{sep}vcftools-{callmode}/{callset}.{sites}.{stat}.png",
     input:
-        stat="{roi}{sep}vcftools/{callset}.{sites}.{stat}",
+        stat="{roi}{sep}vcftools-{callmode}/{callset}.{sites}.{stat}",
     params:
         cmd=csvtk_plot_vcftools_stats,
         options=csvtk_plot_vcftools_stats_options,
     conda:
         "envs/environment.yml"
     benchmark:
-        "benchmarks/csvtk_plot_vcftools_stats/{roi}{sep}vcftools/{callset}.{sites}.{stat}.png.benchmark.txt"
+        "benchmarks/csvtk_plot_vcftools_stats/{roi}{sep}vcftools-{callmode}/{callset}.{sites}.{stat}.png.benchmark.txt"
     log:
-        "logs/csvtk_plot_vcftools_stats/{roi}{sep}vcftools/{callset}.{sites}.{stat}.png.log",
+        "logs/csvtk_plot_vcftools_stats/{roi}{sep}vcftools-{callmode}/{callset}.{sites}.{stat}.png.log",
     threads: 1
     shell:
         """
@@ -1289,7 +1288,7 @@ rule gff_to_roi:
     input:
         gff="{prefix}.gff",
         bed="{roi}/bed/{roi}.bed",
-        #fasta=f"ref/{config['reference']}.genomebed.txt",
+        fasta=f"ref/{config['reference']}.genomebed.txt",
     conda:
         "envs/environment.yml",
     benchmark:
@@ -1317,60 +1316,6 @@ rule bedtools_genome_file:
     shell:
         """
         cut -f 1,2 {input.fasta} > {output.txt}
-        """
-
-##############################
-# Make save script
-##############################
-rule make_roi_save_script:
-    """Make roi save script"""
-    output:
-        sh="{roi}/save.sh",
-    input:
-        lambda wildcards: expand(
-            os.path.join(wildcards.roi, "gatk-genotype-gvcf", "all.{sites}.vcf.gz"),
-            sites=["allsites", "variantsites"],
-        ),
-    conda:
-        "envs/environment.yml"
-    params:
-        ubam=lambda wildcards: '--include "*.unmapped.bam*"'
-        if config["output"][wildcards.roi]["ubam"]
-        else "",
-        fastq=lambda wildcards: '--include "*_R[12].fastq.gz"'
-        if config["output"][wildcards.roi]["fastq"]
-        else "",
-        recal_gvcf=lambda wildcards: f'--include "*.recal.hc.g.vcf.gz*"'
-        if config["output"][wildcards.roi]["recal.gvcf"]
-        else "",
-        recal_bam=lambda wildcards: f'--include "*.recal.ba[mi]"'
-        if config["output"][wildcards.roi]["recal.bam"]
-        else "",
-        reference=lambda wildcards: f'--include "{config["reference"]}*"'
-        if config["output"][wildcards.roi]["reference"]
-        else "",
-        annotation=lambda wildcards: f'--include "{config["annotation"]}*"' if config["output"][wildcards.roi]["annotation"] else "",
-        outdir=lambda wildcards: config["output"][wildcards.roi]["relpath"],
-    log:
-        "logs/{roi}/save.log",
-    threads: 1
-    shell:
-        """
-        echo "#/bin/bash" > {output.sh};
-        echo 'OPTIONS=\"$@\"' >> {output.sh};
-        echo 'rsync -amv ${{OPTIONS}} \\\n
-            --include=\"*/\" \\\n
-            {params.ubam} \\\n
-            {params.fastq} \\\n
-            {params.reference} \\\n
-            {params.recal_gvcf} \\\n
-            {params.recal_bam} \\\n
-            {params.annotation} \\\n
-            --include *sites.vcf.gz* \\\n
-            --include *combine.g.vcf.gz* \\\n
-        --exclude=\"*\" \\\n
-        {wildcards.roi} {params.outdir}' >> {output.sh};
-        chmod +x {output.sh}
         """
 
 
