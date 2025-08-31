@@ -1,4 +1,6 @@
+# -*- yaml -*-
 restart-times: 0
+keep-going: true
 max-jobs-per-second: 1
 max-status-checks-per-second: 10
 local-cores: 1
@@ -7,3 +9,9 @@ use-envmodules: false
 use-conda: false
 rerun-triggers: mtime
 rerun-incomplete: true
+
+set-threads:
+  - repeat_masker=240
+  - repeat_masker_custom=240
+  - repeat_modeler=240
+  - gatk_haplotypecaller=16
