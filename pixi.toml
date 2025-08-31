@@ -10,13 +10,20 @@ version = "0.1.0"
 [dependencies]
 
 [feature.variantcalling.dependencies]
-snakemake = ">=9.9.0,<10"
+bcftools = ">=1.22,<2"
+bedtools = ">=2.31.1,<3"
 bwa = ">=0.7.19,<0.8"
+csvtk = ">=0.34.0,<0.35"
 gatk4 = ">=4.6.2.0,<5"
-samtools = ">=1.22.1,<2"
 picard = ">=3.4.0,<4"
-vcftools = ">=0.1.17,<0.2"
 python = ">=3.13.5,<3.14"
+samtools = ">=1.22.1,<2"
+seqtk = ">=1.5,<2"
+vcftools = ">=0.1.17,<0.2"
+fastqc = ">=0.12.1,<0.13"
+qualimap = ">=2.3,<3"
+vcflib = ">=1.0.14,<2"
+multiqc = ">=1.30,<2"
 
 [feature.lint.dependencies]
 pre-commit = ">=4.2.0,<5"
@@ -46,7 +53,25 @@ typos = "typos --write-changes --force-exclude"
 
 [feature.snakemake.dependencies]
 snakemake = ">=9.9.0,<10"
+snakemake-storage-plugin-http = ">=0.3.0,<0.4"
+
+[feature.sra.dependencies]
+sra-tools = ">=3.2.1,<4"
+entrez-direct = ">=24.0,<25"
+ca-certificates = ">=2025.8.3,<2026"
+
+[feature.repeatmasker.dependencies]
+repeatmasker = ">4.1.5"
+repeatmodeler = ">=2.0.7,<3"
 
 [environments]
 lint = { features = ["lint", "snakemake"], solve-group = "prod" }
-monkeyflower = { features = ["variantcalling"], solve-group = "default" }
+monkeyflower = { features = [
+  "variantcalling",
+  "snakemake",
+  "sra",
+], solve-group = "default" }
+repeatmodeler = { features = [
+  "repeatmasker",
+  "snakemake",
+], solve-group = "prod" }

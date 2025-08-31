@@ -70,12 +70,12 @@ repos:
         language: system
         types: [file, yaml]
         stages: [pre-commit, manual]
-      # - id: snakemake-lint
-      #   name: Snakemake lint monkeyflower workflow
-      #   entry: snakemake --lint text --directory data/monkeyflower -s
-      #   language: system
-      #   log_file: "snakemake-monkeyflower-lint.txt"
-      #   files: "data/monkeyflower/workflow/Snakefile"
+      - id: snakemake-lint
+        name: Snakemake lint monkeyflower workflow
+        entry: snakemake --lint text --directory data/monkeyflower -s
+        language: system
+        log_file: "snakemake-monkeyflower-lint.txt"
+        files: "data/monkeyflower/workflow/Snakefile"
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.18.1
