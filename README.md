@@ -7,4 +7,8 @@ Practice](https://github.com/NBISweden/workshop-pgip).
 
 ## Data generation
 
-Under construction.
+Under construction!
+
+Each dataset has a README with details on how they were generated.
+
+[monkeyflower](./data/monkeyflower/README.md): Monkeyflower dataset
