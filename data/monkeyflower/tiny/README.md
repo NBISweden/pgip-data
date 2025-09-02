@@ -49,3 +49,9 @@ Reference genome files trimmed to region.
 ### rm
 
 Repeat library files for region.
+
+### vcftools-filter-bqsr
+
+Filtered genotype GVCF files. Contains results for all (n=37) and
+redyellow (n=10) samples. Also contains files filtered for biallelic
+SNPs.

@@ -35,8 +35,10 @@ echo running rsync -amv "${OPTIONS[@]}" "${INPUT_DIRECTORY}" ...
 
 rsync -amv "${OPTIONS[@]}" \
     --include="*/" \
-    --include="*.variantsites.vcf.gz" \
-    --include="*.variantsites.vcf.gz.tbi" \
+    --include="*.variantsites*.vcf.gz" \
+    --include="*.variantsites*.vcf.gz.tbi" \
+    --exclude="*.subset.vcf.gz*" \
     --exclude="*" \
-    "${INPUT_DIRECTORY}/gatk-genotype-gvcf-bqsr/" \
+    "${INPUT_DIRECTORY}/gatk-genotype-gvcf-bqsr" \
+    "${INPUT_DIRECTORY}/vcftools-filter-bqsr" \
     .
