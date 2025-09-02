@@ -17,7 +17,14 @@ GATK HaplotypeCaller was then run on bqsr-files in GVCF mode. The
 results were combined with GATK CombineGVCFs, and joint genotyping was
 run with GATK GenotypeGVCFs.
 
-all.variantsites.vcf.gz - all 37 samples
+## Files and directories
 
-redyellow.variantsites.vcf.gz - 10 samples from red and yellow
-ecotypes
+### gatk-genotype-gvcf-bqsr
+
+Genotype GVCF files. Contains results for all (n=37) and
+redyellow (n=10) samples.
+
+### vcftools-filter-bqsr
+
+Filtered genotype GVCF files. Contains results for all (n=37) and
+redyellow (n=10) samples. Also contains files filtered for biallelic SNPs.

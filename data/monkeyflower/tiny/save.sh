@@ -45,6 +45,8 @@ rsync -amv "${OPTIONS[@]}" \
     --exclude="*.after*" \
     --exclude="*.table" \
     --exclude="*" \
+    "${INPUT_DIRECTORY}/gatk-genotype-gvcf-bqsr" \
+    "${INPUT_DIRECTORY}/vcftools-filter-bqsr" \
     "${INPUT_DIRECTORY}/md" \
     "${INPUT_DIRECTORY}/gatk-bqsr" \
     "${INPUT_DIRECTORY}/gatk-hc-bqsr" \
@@ -52,6 +54,5 @@ rsync -amv "${OPTIONS[@]}" \
     "${INPUT_DIRECTORY}/fastq" \
     "${INPUT_DIRECTORY}/ref" \
     "${INPUT_DIRECTORY}/rm" \
-    "${INPUT_DIRECTORY}/gatk-genotype-gvcf-bqsr" \
     "${INPUT_DIRECTORY}/gatk-combine-gvcf-bqsr" \
     .
